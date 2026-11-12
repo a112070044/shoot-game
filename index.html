@@ -62,6 +62,33 @@
   #qr img{width:min(60vmin,280px);height:auto;image-rendering:pixelated;border-radius:4px;display:block}
   #pairUrl{margin-top:10px;font-size:11px;opacity:.5;word-break:break-all;max-width:420px;user-select:text;-webkit-user-select:text}
   #pairMsg{margin:14px 0 10px;font-size:15px;letter-spacing:.08em;min-height:1.4em}
+  #modes{display:flex;gap:8px;margin-bottom:8px}
+  .chip{min-width:0;margin:0;padding:8px 16px;font-size:14px;background:transparent;border-color:rgba(230,220,196,.3)}
+  .chip.on{background:rgba(185,58,44,.45);border-color:rgba(230,220,196,.7)}
+  #modeDesc{font-size:12px;opacity:.6;margin-bottom:14px;max-width:440px;line-height:1.7;min-height:1.7em}
+  #sensRow{display:flex;align-items:center;gap:10px;font-size:12px;opacity:.7;margin-top:12px}
+  #sens{width:150px;accent-color:#b93a2c}
+  .help{margin-top:10px}
+  #perks{background:rgba(0,0,0,.6)}
+  #pkList{display:flex;gap:12px;flex-wrap:wrap;justify-content:center}
+  .pk{min-width:0;width:170px;padding:18px 12px;margin:0;display:flex;flex-direction:column;gap:8px;background:rgba(20,16,12,.85)}
+  .pk b{font-size:17px;letter-spacing:.15em;color:#ffd9a0}.pk span{font-size:12px;opacity:.75;letter-spacing:.03em;line-height:1.5}
+  #combo{color:#ffd23a;font-size:13px;min-height:1.3em;margin-top:2px}
+  #bossbar{width:220px;height:6px;margin:4px auto 0;border:1px solid rgba(216,210,196,.5);opacity:0;transition:opacity .4s}
+  #bossbar i{display:block;height:100%;background:#c9c2e8;width:100%}
+  #dmgdir{position:absolute;left:50%;top:50%;width:230px;height:230px;margin:-115px 0 0 -115px;border-radius:50%;box-sizing:border-box;
+    border:6px solid transparent;border-top-color:rgba(255,70,45,.9);opacity:0}
+  #cPerks{display:flex;flex-direction:column;gap:10px;width:86%}
+  #cPerks .pk{width:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:14px}
+  #starts{display:flex;flex-direction:column;align-items:center}
+  .screen{overflow-y:auto}
+  @media (max-height:480px){
+    h1{font-size:30px}.sub{margin:2px 0 8px;font-size:11px}
+    #starts{flex-direction:row;flex-wrap:wrap;justify-content:center}
+    button{padding:9px 14px;min-width:150px;font-size:13px;margin:4px}
+    #modeDesc{margin-bottom:6px}.help{font-size:11px;line-height:1.6;margin-top:6px}
+    .pk{width:150px;padding:12px 10px}
+  }
   /* 手機遙控器頁面 */
   #ctrl{position:fixed;inset:0;z-index:50;background:#0b0a09;display:flex;flex-direction:column;touch-action:none;
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);box-sizing:border-box}
@@ -92,7 +119,7 @@
   .screen.hide{display:none}
   h1{margin:0;font-size:clamp(38px,9vw,72px);letter-spacing:.35em;text-indent:.35em;font-weight:700;color:#e6dcc4;
     text-shadow:0 0 28px rgba(255,170,80,.35)}
-  .sub{margin:8px 0 26px;font-size:13px;letter-spacing:.4em;text-indent:.4em;opacity:.55}
+  .sub{margin:8px 0 18px;font-size:13px;letter-spacing:.4em;text-indent:.4em;opacity:.55}
   button{font:inherit;color:#e6dcc4;background:rgba(185,58,44,.2);border:1px solid rgba(230,220,196,.55);
     padding:13px 28px;margin:6px;min-width:230px;font-size:16px;letter-spacing:.15em;border-radius:3px}
   button.alt{background:transparent;border-color:rgba(230,220,196,.28);font-size:14px}
@@ -107,7 +134,8 @@
 <div id="touch"></div>
 <div id="hud">
   <div class="tl"><div class="lbl">生命</div><div id="hpbar"><div id="hpfill"></div></div></div>
-  <div class="tc"><div id="wave">第 1 波</div><div id="score">0</div></div>
+  <div class="tc"><div id="wave">第 1 波</div><div id="score">0</div><div id="combo"></div><div id="bossbar"><i></i></div></div>
+  <div id="dmgdir"></div>
   <div id="cross"><i></i><i></i><i></i><i></i><i></i></div>
   <div id="hit"></div>
   <div id="banner"></div>
@@ -125,10 +153,19 @@
 <div class="screen" id="menu">
   <h1>地下室</h1>
   <div class="sub">B2 · 燈快熄了</div>
-  <button id="bGyro">開始 · 陀螺儀瞄準</button>
-  <button id="bTouch" class="alt">開始 · 觸控瞄準</button>
-  <button id="bRemote" class="alt">手機當遙控器 · 掃 QR Code</button>
+  <div id="modes"></div>
+  <div id="modeDesc"></div>
+  <div id="starts">
+    <button id="bGyro">開始 · 陀螺儀瞄準</button>
+    <button id="bTouch" class="alt">開始 · 觸控瞄準</button>
+    <button id="bRemote" class="alt">手機當遙控器 · 掃 QR Code</button>
+  </div>
+  <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
   <div class="help" id="help"></div>
+</div>
+<div class="screen hide" id="perks">
+  <div class="sub" style="margin-bottom:16px;opacity:.8">選擇一項強化</div>
+  <div id="pkList"></div>
 </div>
 <div class="screen hide" id="pair">
   <div class="sub" style="margin-bottom:14px">用手機掃描，手機就變成槍的遙控器</div>
@@ -138,9 +175,10 @@
   <button id="bBack" class="alt">返回</button>
 </div>
 <div class="screen hide" id="over">
-  <h1>你倒下了</h1>
+  <h1 id="overTitle">你倒下了</h1>
   <div id="final"></div>
   <button id="bAgain">再來一次</button>
+  <button id="bMenu" class="alt">回主選單</button>
 </div>
 <div id="err"></div>
 
@@ -159,14 +197,14 @@
       <button id="cGo">連線並啟用陀螺儀</button><div id="cMsg"></div></div>
     <div id="cPad">
       <div id="cTop"><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
-      <div id="cSwipe"><button id="cStart">開始遊戲</button><span>在這裡滑動可轉身</span></div>
+      <div id="cSwipe"><button id="cStart">開始遊戲</button><div id="cPerks"></div><span>在這裡滑動可轉身</span></div>
       <div id="cRow"><div class="cb" data-k="ads">開鏡</div><div class="cb" data-k="reload">換彈</div><div class="cb" data-k="next">換槍</div><div class="cb" data-k="center">回正</div></div>
       <div id="cBottom"><div id="cStick"><div id="cKnob"></div></div><div id="cFire">射擊</div></div>
     </div>`;
   document.body.appendChild(el);
   const $ = s => el.querySelector(s), DEG = Math.PI / 180, SENS = 1.8;
   const st = { y: 0, p: 0, mx: 0, my: 0, f: 0, a: 0, c: 0 };
-  let conn = null, timer = 0, acc = 0, last = null, beta = 0, a0 = 0, b0 = 0, dragY = 0, dragP = 0;
+  let pkKey = '', conn = null, timer = 0, acc = 0, last = null, beta = 0, a0 = 0, b0 = 0, dragY = 0, dragP = 0;
   const msg = t => { $('#cMsg').textContent = t; };
   // 手機頂端指向螢幕：alpha＝左右轉向、beta＝上下俯仰；alpha 會在 0/360 跳變，這裡累加成連續角度
   function onOri(e) {
@@ -185,7 +223,11 @@
     if (d.t === 'v') { if (navigator.vibrate) navigator.vibrate(d.ms); }
     else if (d.t === 'h') {
       $('#cW').textContent = d.w; $('#cA').textContent = (d.r ? '換彈中' : d.a + ' / ' + d.m); $('#cHp i').style.width = d.hp + '%';
-      const b = $('#cStart'); b.style.display = d.st === 'play' ? 'none' : ''; b.textContent = d.st === 'dead' ? '再來一次' : '開始遊戲';
+      const b = $('#cStart'); b.style.display = d.st === 'play' || d.st === 'perk' ? 'none' : ''; b.textContent = d.st === 'dead' ? '再來一次' : '開始遊戲';
+      const key = d.pk ? JSON.stringify(d.pk) : ''; if (key !== pkKey) {
+        pkKey = key; const box = $('#cPerks'); box.innerHTML = '';
+        (d.pk || []).forEach((p, i) => { const q = document.createElement('button'); q.className = 'pk'; q.innerHTML = '<b></b><span></span>'; q.firstChild.textContent = p[0]; q.lastChild.textContent = p[1]; q.onclick = () => send({ t: 'e', k: 'perk', i }); box.appendChild(q); });
+      }
     }
   }
   const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
@@ -219,7 +261,7 @@
     if (l > R) { dx *= R / l; dy *= R / l; } st.mx = dx / R; st.my = dy / R; k.style.transform = 'translate(' + dx * .6 + 'px,' + dy * .6 + 'px)';
   });
   let sw = null;
-  $('#cSwipe').addEventListener('touchstart', x => { if (x.target.id !== 'cStart') x.preventDefault(); const t = x.targetTouches[0]; sw = { x: t.clientX, y: t.clientY }; }, { passive: false });
+  $('#cSwipe').addEventListener('touchstart', x => { if (!x.target.closest('button')) x.preventDefault(); const t = x.targetTouches[0]; sw = { x: t.clientX, y: t.clientY }; }, { passive: false });
   $('#cSwipe').addEventListener('touchmove', x => { x.preventDefault(); const t = x.targetTouches[0]; if (!t || !sw) return; dragY -= (t.clientX - sw.x) * .007; dragP -= (t.clientY - sw.y) * .005; sw = { x: t.clientX, y: t.clientY }; }, { passive: false });
   el.querySelectorAll('.cb').forEach(b => b.addEventListener('touchstart', x => {
     x.preventDefault(); const k = b.dataset.k;
@@ -434,7 +476,7 @@ function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
 }
 
 /* ───────────────────────── 燈光 ───────────────────────── */
-scene.add(new THREE.HemisphereLight(0x27313a, 0x050403, 0.25));
+const hemi = new THREE.HemisphereLight(0x27313a, 0x050403, 0.25); scene.add(hemi);
 
 // 掛燈：穩定的昏暗光源（不閃爍），只保留極慢的晃動；主要照明交給槍上的手電筒
 const lamps = [];
@@ -452,12 +494,13 @@ function addLamp(x, z, color, intensity, shadow, cord) {
     light.shadow.camera.near = .12; light.shadow.camera.far = 17; light.shadow.bias = -.004; light.shadow.normalBias = .04; light.shadow.radius = 3;
   }
   pivot.add(light);
-  lamps.push({ pivot, ph: rand(6.28), w1: rand(.5, .7), w2: rand(.35, .5), amp: rand(.02, .035) });
+  lamps.push({ pivot, light, bulb, base: intensity, bcol: bulb.material.color.clone(), ph: rand(6.28), w1: rand(.5, .7), w2: rand(.35, .5), amp: rand(.02, .035) });
 }
 addLamp(0, 0, 0xffbe73, 11, true, .95);
 addLamp(0, -9.5, 0xffb875, 5, false, .8);
 addLamp(0, 9.5, 0xffb060, 5, false, 1.05);
 
+function setDark(d) { hemi.intensity = d ? .1 : .25; for (const l of lamps) { l.light.intensity = d ? 0 : l.base; l.bulb.material.color.copy(l.bcol).multiplyScalar(d ? .02 : 1); } }
 // 門上的紅色指示燈（恆亮）
 for (const s of [-1, 1]) {
   const l = new THREE.PointLight(0xff1a08, 3, 8, 2); l.position.set(0, 2.75, s * (D / 2 - .5)); scene.add(l);
@@ -544,7 +587,7 @@ const WEAPONS = [
   { name: '狙擊步槍', mag: 5, cd: 1.2, dmg: 9, pellets: 1, spread: .035, heat: 0, hs: 0, adsMul: 0, kick: .06, gk: 1.6, adsFov: 17, scope: true, pierce: 3, reload: 2.1, cycle: .85, knock: 4, flash: 1.3, snd: [4200, 130, 1.4], hip: [.16, -.17, -.34], build: buildRifle }
 ];
 for (const w of WEAPONS) {
-  w.g = new THREE.Group(); gun.add(w.g); w.parts = w.build(w.g); w.ammo = w.mag; w.g.visible = false;
+  w.g = new THREE.Group(); gun.add(w.g); w.parts = w.build(w.g); w.baseMag = w.ammo = w.mag; w.g.visible = false;
   const P = w.parts; P.rackZ = P.rack.position.z; if (P.mag) P.magBase = P.mag.position.clone();
 }
 let wi = 0, cur = WEAPONS[0], baseFov = 68, ads = 0, sgTilt = 0, switchT = 0, switchTo = 0, cycleT = 0, cycSnd = true, reloadDur = 1, rStage = 0;
@@ -689,6 +732,7 @@ const sfx = {
   growl(v = .3) { tone('sawtooth', rand(62, 95), rand(36, 50), rand(.6, 1.1), v, rand(14, 24)); },
   die() { tone('sawtooth', 120, 30, .7, .32, 28); noise(.3, 'lowpass', 700, 120, .35); },
   hurt() { tone('sine', 95, 38, .3, .9); noise(.16, 'lowpass', 900, 150, .6); },
+  pick() { tone('sine', 660, 1320, .2, .25); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { noise(.22, 'bandpass', 1100, 300, .3, 2); },
   drip() { tone('sine', rand(1500, 2100), rand(700, 900), .09, .05); }
 };
 
@@ -787,7 +831,8 @@ const ray = new THREE.Raycaster(); ray.far = 45;
 function showBanner(t, ms = 2200) { const b = $('banner'); b.textContent = t; b.classList.add('on'); clearTimeout(showBanner.t); showBanner.t = setTimeout(() => b.classList.remove('on'), ms); }
 function showTip(t, ms = 2600) { const b = $('tip'); b.textContent = t; b.classList.add('on'); clearTimeout(showTip.t); showTip.t = setTimeout(() => b.classList.remove('on'), ms); }
 function hud() {
-  $('hpfill').style.width = clamp(hp, 0, 100) + '%'; $('score').textContent = score; $('wave').textContent = `第 ${wave} 波`;
+  $('hpfill').style.width = clamp(hp / perk.maxHp * 100, 0, 100) + '%'; $('score').textContent = score;
+  $('wave').textContent = MODES[gameMode].time ? `剩餘 ${Math.max(0, Math.ceil(timeLeft))} 秒` : `第 ${wave} 波`;
   $('wname').textContent = cur.name; $('acount').textContent = cur.ammo; $('amag').textContent = '/ ' + cur.mag;
   $('ammo').classList.toggle('low', cur.ammo <= Math.ceil(cur.mag * .25));
 }
@@ -796,7 +841,9 @@ function hud() {
 const TYPES = {
   walker: { hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [3.2, .25, .1], lean: .35, score: 100 },
   runner: { hp: 2.5, speed: 3.3, scale: .86, dmg: 7, skin: 0x6b5a4c, eye: [3, 2.2, .2], lean: .75, score: 150 },
-  brute: { hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [3.4, 1, .1], lean: .25, score: 400 }
+  brute: { hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [3.4, 1, .1], lean: .25, score: 400 },
+  spitter: { hp: 3, speed: 1.7, scale: .95, dmg: 9, skin: 0x3f5a3a, eye: [.4, 3.2, .5], lean: .55, score: 200, spit: true },   // 遠距離吐酸液
+  boss: { hp: 70, speed: 1.3, scale: 1.65, dmg: 30, skin: 0x2a2226, eye: [2.6, 2.8, 3.6], lean: .4, score: 2000, boss: true }
 };
 const eGeo = {
   leg: B(.15, .85, .15).translate(0, -.425, 0), torso: B(.48, .64, .27).translate(0, .32, 0), arm: B(.105, .74, .105).translate(0, -.37, 0),
@@ -806,15 +853,16 @@ const SPAWNS = [
   { sx: 0, sz: -D / 2 - 6, wx: 0, wz: -D / 2 + 1.4 }, { sx: 0, sz: D / 2 + 6, wx: 0, wz: D / 2 - 1.4 },
   { sx: -W / 2 - 6, sz: 0, wx: -W / 2 + 1.4, wz: 0 }, { sx: W / 2 + 6, sz: 0, wx: W / 2 - 1.4, wz: 0 }
 ];
-function spawnEnemy() {
-  const r = Math.random(), tn = wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .42 ? 'runner' : 'walker', T = TYPES[tn];
+function spawnEnemy(force) {
+  const r = Math.random(), tn = force || (wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .42 ? 'runner' : wave >= 3 && r > .85 ? 'spitter' : 'walker'), T = TYPES[tn];
   // 優先從玩家看不到/較遠的門湧出
   const sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s;
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const mat = new THREE.MeshStandardMaterial({ color: T.skin, roughness: .62, flatShading: true });
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
-    ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9) };
+    ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
+  e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(.7); setTimeout(() => sfx.growl(.6), 350); }
   const mk = (geo, parent, x, y, z, head) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.userData.e = e; m.userData.head = !!head; parent.add(m); e.meshes.push(m); return m; };
   e.legL = mk(eGeo.leg, body, -.13, .85, 0); e.legR = mk(eGeo.leg, body, .13, .85, 0);
   e.torso = mk(eGeo.torso, body, 0, .83, 0); e.torso.rotation.x = T.lean;
@@ -822,7 +870,7 @@ function spawnEnemy() {
   e.head = mk(eGeo.head, e.torso, 0, .78, .04, true); e.head.scale.set(1, 1.15, 1.05); e.head.rotation.x = -T.lean * .8;
   mk(eGeo.jaw, e.head, 0, -.13, .07, true);
   for (const sx of [-.06, .06]) { const m = new THREE.Mesh(eGeo.eye, eyeMat); m.position.set(sx, .02, .145); e.head.add(m); }
-  root.scale.setScalar(T.scale); if (tn === 'brute') { e.torso.scale.set(1.25, 1, 1.3); } if (tn === 'runner') { e.torso.scale.set(.85, 1, .85); }
+  root.scale.setScalar(T.scale); if (tn === 'brute' || T.boss) { e.torso.scale.set(1.25, 1, 1.3); } if (tn === 'runner') { e.torso.scale.set(.85, 1, .85); }
   root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
   if (Math.random() < .5) sfx.growl(.22);
 }
@@ -830,7 +878,12 @@ function killEnemy(e, headshot, dir) {
   e.dead = true; e.deadT = 0; e.eyeMat.color.multiplyScalar(.12);
   for (const m of e.meshes) { const i = rayTargets.indexOf(m); if (i >= 0) rayTargets.splice(i, 1); }
   e.kx = dir.x * 2.2; e.kz = dir.z * 2.2;
-  score += e.T.score + (headshot ? 50 : 0); kills++; sfx.die();
+  comboN = comboT > 0 ? comboN + 1 : 1; comboT = 4; const mul = 1 + Math.min(comboN - 1, 8) * .25;
+  score += Math.round((e.T.score + (headshot ? 50 : 0)) * mul * (MODES[gameMode].mul || 1)); kills++; sfx.die();
+  $('combo').textContent = comboN > 1 ? `連殺 ×${mul}` : '';
+  if (perk.leech) hp = Math.min(perk.maxHp, hp + perk.leech);
+  if (e.T.boss || Math.random() < (hp < perk.maxHp * .4 ? .3 : .1)) dropPickup(e.x, e.z);
+  if (e === bossE) { bossE = null; shake = .08; }
   const p = pools[poolI++ % pools.length]; p.visible = true; p.position.set(e.x + dir.x * .9, .012 + (poolI % 12) * .0006, e.z + dir.z * .9); p.scale.setScalar(.15); p.userData.g = rand(.7, 1.25) * e.T.scale; p.rotation.y = rand(6);
   hud();
 }
@@ -868,7 +921,9 @@ function updateEnemies(dt, t) {
       const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
     }
     e.stun = Math.max(0, e.stun - dt);
-    const sp = inRange ? 0 : e.speed * (e.stun > 0 ? .15 : 1);
+    const hold = e.T.spit && e.mode === 'chase' && dist < 6.5;
+    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1);
+    if (e.T.spit && e.mode === 'chase' && dist < 12 && state === 'play') { e.spitT -= dt; if (e.spitT <= 0) { e.spitT = rand(2.2, 3.4); spit(e); } }
     e.x += (vx * sp + e.kx) * dt; e.z += (vz * sp + e.kz) * dt; e.kx *= Math.exp(-dt * 9); e.kz *= Math.exp(-dt * 9);
     if (e.mode === 'chase') {
       e.x = clamp(e.x, -W / 2 + .4, W / 2 - .4); e.z = clamp(e.z, -D / 2 + .4, D / 2 - .4);
@@ -884,16 +939,20 @@ function updateEnemies(dt, t) {
     if (inRange) {
       e.atk += dt;
       if (e.atk > 0) reach -= Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .9;
-      if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg); }
+      if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
     } else e.atk = Math.min(e.atk, -.15);
     e.armL.rotation.x = reach + s * .18; e.armR.rotation.x = reach - s * .18;
     e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
   }
   return alive;
 }
-function hurtPlayer(d) {
+function hurtPlayer(d, sx, sz) {
   if (state !== 'play') return;
-  hp -= d; damageFx = 1; shake = Math.max(shake, .05); sfx.hurt(); navigator.vibrate?.(60); remoteSend({ t: 'v', ms: 90 }); hud();
+  if (sx !== undefined) {   // 受傷方向提示
+    const el = $('dmgdir'), rel = Math.atan2(-(sx - player.x), -(sz - player.z)) - yaw;
+    el.style.transition = 'none'; el.style.transform = `rotate(${-rel}rad)`; el.style.opacity = 1; void el.offsetWidth; el.style.transition = 'opacity .9s'; el.style.opacity = 0;
+  }
+  hp -= d * perk.armor; damageFx = 1; shake = Math.max(shake, .05); sfx.hurt(); navigator.vibrate?.(60); remoteSend({ t: 'v', ms: 90 }); hud();
   if (hp <= 0) gameOver();
 }
 
@@ -912,11 +971,11 @@ function switchWeapon(d, abs) {
 }
 function reload() {
   const w = cur; if (state !== 'play' || reloadT > 0 || switchT > 0 || w.ammo >= w.mag) return;
-  reloadT = reloadDur = w.reload; rStage = 0;
+  reloadT = reloadDur = w.reload / perk.reload; rStage = 0;
 }
 function hitEnemy(e, h, w) {
   const p = h.point, head = h.object.userData.head, n = Math.ceil((head ? 26 : 14) / Math.sqrt(w.pellets));
-  e.hp -= w.dmg * (head ? 2.6 : 1); e.flash = 1; e.stun = Math.max(e.stun, .16);
+  e.hp -= w.dmg * perk.dmg * (head ? perk.head : 1); e.flash = 1; e.stun = Math.max(e.stun, .16);
   const kb = w.knock * (head ? 1.4 : 1) / e.T.scale / Math.sqrt(w.pellets); e.kx += vDir.x * kb; e.kz += vDir.z * kb;
   for (let i = 0; i < n; i++) blood.emit(p.x, p.y, p.z, -vDir.x * rand(0, 2.5) + rand(-1.6, 1.6), rand(-.5, 3), -vDir.z * rand(0, 2.5) + rand(-1.6, 1.6), rand(.5, 1.6), rand(.02, .05), rand(.04, .08), .002, .002, 9.8);
   for (let i = 0; i < n / 3; i++) blood.emit(p.x, p.y, p.z, vDir.x * rand(2, 5) + rand(-.6, .6), rand(0, 1.6), vDir.z * rand(2, 5) + rand(-.6, .6), rand(.6, 1.4), rand(.02, .045), .06, .002, .002, 9.8);
@@ -934,7 +993,7 @@ function fire() {
   if (w.ammo <= 0) { sfx.dry(); fireCD = .3; reload(); return; }
   const scoped = w.scope && ads > .85;
   w.ammo--; fireCD = w.cd; kick = 1; if (w.cycle) { cycleT = w.cycle; cycSnd = false; }
-  recoilP += w.kick * (1 - ads * .4); shake = Math.max(shake, .012 * w.gk); heat = Math.min(1, heat + w.heat);
+  recoilP += w.kick * perk.recoil * (1 - ads * .4); shake = Math.max(shake, .012 * w.gk); heat = Math.min(1, heat + w.heat);
   flashT = .05; flash.visible = true; flash.rotation.z = rand(6.28); flash.scale.setScalar(rand(.75, 1.25) * w.flash); muzzleLight.intensity = 14 * w.flash;
   sfx.shot(w); navigator.vibrate?.(12); remoteSend({ t: 'v', ms: 25 });
   camera.updateMatrixWorld(); muzzle.getWorldPosition(vMz); camera.getWorldDirection(vAim); camera.getWorldPosition(vCam);
@@ -942,7 +1001,7 @@ function fire() {
     for (let i = 0; i < 12 * w.flash; i++) { const s = rand(4, 16); sparks.emit(vMz.x, vMz.y, vMz.z, vAim.x * s + rand(-2.4, 2.4), vAim.y * s + rand(-2.4, 2.4), vAim.z * s + rand(-2.4, 2.4), rand(.05, .22), rand(.012, .035), 4, rand(1.2, 2.4), .5, 5); }
     smoke.emit(vMz.x + vAim.x * .1, vMz.y, vMz.z + vAim.z * .1, vAim.x * .6 + rand(-.1, .1), rand(.15, .4), vAim.z * .6 + rand(-.1, .1), rand(.5, .9), rand(.12, .2), .09, .09, .09, -.2);
   }
-  const sp = (w.spread + heat * w.hs) * (1 - ads * (1 - w.adsMul)); let mark = 0;
+  const sp = (w.spread + heat * w.hs) * (1 - ads * (1 - w.adsMul)) * perk.recoil; let mark = 0;
   for (let k = 0; k < w.pellets; k++) {
     vDir.set(vAim.x + rand(-sp, sp), vAim.y + rand(-sp, sp), vAim.z + rand(-sp, sp)).normalize(); ray.set(vCam, vDir); shotId++;
     const hits = ray.intersectObjects(rayTargets, false).concat(ray.intersectObjects(solids, false)).sort((a, b) => a.distance - b.distance);
@@ -958,18 +1017,111 @@ function fire() {
   hud();
 }
 
+/* ───────────────────────── 模式、強化、補血包、酸液 ───────────────────────── */
+const LS = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) { } } };
+const MODES = {
+  survival: { n: '生存', d: '一波接一波，每波結束選一項強化，每 5 波出現首領' },
+  blackout: { n: '停電', d: '所有燈都滅了，只剩槍燈與怪物發亮的眼睛。得分 ×1.5', dark: true, mul: 1.5 },
+  rush: { n: '限時獵殺', d: '120 秒內盡量擊殺，怪物越來越多，連殺讓得分加倍', time: 120 }
+};
+let gameMode = MODES[LS.get('b2mode')] ? LS.get('b2mode') : 'survival', timeLeft = 0, lastSec = -1, comboN = 0, comboT = 0, bossE = null, bossPending = false, lastBoss = -1;
+let sensMul = clamp(parseFloat(LS.get('b2sens')) || 1, .4, 2.2);
+const best = m => +LS.get('b2best_' + m) || 0;
+function refreshModes() {
+  $('modes').innerHTML = ''; 
+  for (const k in MODES) { const b = document.createElement('button'); b.className = 'chip' + (k === gameMode ? ' on' : ''); b.textContent = MODES[k].n; b.onclick = () => { gameMode = k; LS.set('b2mode', k); refreshModes(); }; $('modes').appendChild(b); }
+  $('modeDesc').textContent = MODES[gameMode].d + (best(gameMode) ? `　·　最佳 ${best(gameMode)}` : '');
+}
+refreshModes();
+$('sens').value = sensMul; $('sens').oninput = e => { sensMul = +e.target.value; LS.set('b2sens', sensMul); };
+
+// 強化（每波結束三選一）
+const perk = {};
+function applyPerks() { for (const w of WEAPONS) w.mag = Math.round(w.baseMag * perk.mag); torch.intensity = 9 * (1 + perk.torch * .35); torch.angle = .54 + perk.torch * .07; }
+function resetPerks() { Object.assign(perk, { dmg: 1, mag: 1, reload: 1, speed: 1, armor: 1, leech: 0, head: 2.6, recoil: 1, maxHp: 100, torch: 0 }); applyPerks(); }
+resetPerks();
+const PERKS = [
+  { n: '重彈頭', d: '所有槍枝傷害 +25%', f: () => perk.dmg *= 1.25 },
+  { n: '擴充彈匣', d: '彈匣容量 +30%', f: () => perk.mag *= 1.3 },
+  { n: '快手', d: '換彈速度 +30%', f: () => perk.reload *= 1.3 },
+  { n: '腎上腺素', d: '移動速度 +12%', f: () => perk.speed *= 1.12 },
+  { n: '防彈背心', d: '受到的傷害 -18%', f: () => perk.armor *= .82 },
+  { n: '急救包', d: '生命上限 +15，並立刻補滿', f: () => { perk.maxHp += 15; hp = perk.maxHp; } },
+  { n: '嗜血', d: '每次擊殺回復 3 生命', f: () => perk.leech += 3 },
+  { n: '強光手電筒', d: '槍燈更亮、照得更廣', f: () => perk.torch++, ok: () => perk.torch < 3 },
+  { n: '爆頭專家', d: '爆頭傷害 +35%', f: () => perk.head *= 1.35 },
+  { n: '穩定握把', d: '後座力與散布 -25%', f: () => perk.recoil *= .75 }
+];
+let perkOpts = [];
+function offerPerks() {
+  state = 'perk'; input.fire = input.ads = false; input.mx = input.my = 0; document.exitPointerLock?.(); sfx.perk();
+  perkOpts = PERKS.filter(p => !p.ok || p.ok()).sort(() => Math.random() - .5).slice(0, 3);
+  $('pkList').innerHTML = '';
+  perkOpts.forEach((p, i) => { const b = document.createElement('button'); b.className = 'pk'; b.innerHTML = `<b>${p.n}</b><span>${p.d}</span>`; b.onclick = () => pickPerk(i); $('pkList').appendChild(b); });
+  $('perks').classList.remove('hide'); remoteStatus();
+}
+function pickPerk(i) {
+  if (state !== 'perk' || !perkOpts[i]) return;
+  perkOpts[i].f(); applyPerks(); perkOpts = []; $('perks').classList.add('hide'); state = 'play';
+  if (!IS_TOUCH && !remote.on) tl.requestPointerLock?.();
+  startWave(wave + 1);
+}
+addEventListener('keydown', e => { const n = ['Digit1', 'Digit2', 'Digit3'].indexOf(e.code); if (n >= 0 && state === 'perk') pickPerk(n); });
+
+// 補血包（發綠光的十字，走過去撿）
+const pickups = [];
+{
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(.25, 2, .45), fog: false });
+  for (let i = 0; i < 4; i++) { const g = new THREE.Group(); g.add(new THREE.Mesh(B(.26, .08, .08), m), new THREE.Mesh(B(.08, .26, .08), m)); g.visible = false; scene.add(g); pickups.push({ g, life: 0 }); }
+}
+function dropPickup(x, z) { const p = pickups.find(p => p.life <= 0) || pickups[0]; p.life = 25; p.g.visible = true; p.g.position.set(clamp(x, -W / 2 + .6, W / 2 - .6), .45, clamp(z, -D / 2 + .6, D / 2 - .6)); }
+function updatePickups(dt, t) {
+  for (const p of pickups) {
+    if (p.life <= 0) continue; p.life -= dt; p.g.rotation.y = t * 2; p.g.position.y = .45 + Math.sin(t * 3) * .06; p.g.visible = p.life > 4 || Math.sin(t * 14) > 0;
+    if (state === 'play' && Math.hypot(p.g.position.x - player.x, p.g.position.z - player.z) < 1.1) { p.life = 0; hp = Math.min(perk.maxHp, hp + 30); sfx.pick(); showTip('+30 生命', 1200); hud(); }
+    if (p.life <= 0) p.g.visible = false;
+  }
+}
+
+// 酸液彈：發光、可閃避、打到柱子會消失
+const spits = [];
+{
+  const m = new THREE.MeshBasicMaterial({ color: new THREE.Color(.5, 3, .6), fog: false }), geo = new THREE.IcosahedronGeometry(.1, 0);
+  for (let i = 0; i < 8; i++) { const o = new THREE.Mesh(geo, m); o.visible = false; scene.add(o); spits.push({ o, life: 0, vx: 0, vy: 0, vz: 0, dmg: 0, sx: 0, sz: 0 }); }
+}
+function spit(e) {
+  const s = spits.find(s => s.life <= 0); if (!s) return;
+  const oy = 1.45 * e.T.scale, dx = player.x - e.x, dy = player.y - .25 - oy, dz = player.z - e.z, l = Math.hypot(dx, dy, dz) || 1, v = 8.5;
+  s.o.position.set(e.x, oy, e.z); s.o.visible = true; s.life = 3; s.vx = dx / l * v; s.vy = dy / l * v; s.vz = dz / l * v; s.dmg = e.T.dmg; s.sx = e.x; s.sz = e.z;
+  e.atk = -.5; sfx.spit();
+}
+function updateSpits(dt) {
+  for (const s of spits) {
+    if (s.life <= 0) continue; const p = s.o.position;
+    s.life -= dt; p.x += s.vx * dt; p.y += s.vy * dt; p.z += s.vz * dt; s.o.rotation.x += dt * 9;
+    if (Math.random() < .6) sparks.emit(p.x, p.y, p.z, rand(-.4, .4), rand(-.2, .5), rand(-.4, .4), rand(.15, .4), rand(.015, .03), .3, 1.8, .4, 2);
+    let end = s.life <= 0 || p.y < .05 || Math.abs(p.x) > W / 2 || Math.abs(p.z) > D / 2;
+    for (const o of obstacles) if (Math.hypot(p.x - o.x, p.z - o.z) < o.r) end = true;
+    if (state === 'play' && Math.hypot(p.x - player.x, p.y - (player.y - .25), p.z - player.z) < .55) { end = true; if (attackGrace <= 0) hurtPlayer(s.dmg, s.sx, s.sz); }
+    if (end) { s.life = 0; s.o.visible = false; for (let i = 0; i < 10; i++) sparks.emit(p.x, p.y, p.z, rand(-2, 2), rand(-1, 2.5), rand(-2, 2), rand(.15, .45), rand(.015, .035), .3, 1.8, .4, 9.8); }
+  }
+}
+
 /* ───────────────────────── 流程 ───────────────────────── */
-function startWave(n) { wave = n; toSpawn = Math.min(42, 4 + n * 2); spawnT = 2.2; showBanner(`第 ${n} 波`); hud(); }
+function startWave(n) { wave = n; toSpawn = Math.min(42, 4 + n * 2); spawnT = 2.2; bossPending = n % 5 === 0; if (bossPending) toSpawn = Math.ceil(toSpawn * .6); showBanner(`第 ${n} 波`); hud(); }
 function resetGame() {
   while (enemies.length) removeEnemy(enemies[0]); rayTargets.length = 0;
   pools.forEach(p => p.visible = false); holes.forEach(h => h.visible = false);
   hp = 100; score = 0; kills = 0; reloadT = 0; switchT = 0; cycleT = 0; damageFx = 0; heat = 0; waveGap = 0; attackGrace = 0;
+  resetPerks(); setDark(!!MODES[gameMode].dark); comboN = comboT = 0; $('combo').textContent = ''; bossE = null; bossPending = false; perkOpts = [];
+  for (const s of spits) { s.life = 0; s.o.visible = false; } for (const p of pickups) { p.life = 0; p.g.visible = false; }
+  timeLeft = MODES[gameMode].time || 0; lastSec = -1;
   for (const w of WEAPONS) w.ammo = w.mag; setWeapon(0);
   player.set(0, EYE, 5); yaw = 0; pitch = 0; lookDX = lookDY = 0; input.fire = input.ads = false; input.mx = input.my = 0; tmap.clear(); stick.style.display = 'none';
   $('ads').classList.remove('act');
   if (useGyro && ori.has) calibrate(0);
   remote.ty = remote.tp = 0; remote.ly = remote.y; remote.lp = remote.p;
-  startWave(1);
+  if (MODES[gameMode].time) { wave = 1; toSpawn = 0; spawnT = 1.5; showBanner(MODES[gameMode].n); hud(); } else startWave(1);
 }
 let lastMode = false;
 // mode：true＝手機陀螺儀、false＝觸控/滑鼠、'remote'＝手機當遙控器
@@ -982,20 +1134,23 @@ async function begin(mode) {
     try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); await screen.orientation?.lock?.('landscape'); } catch (e) { }
   } else tl.requestPointerLock?.();
   document.body.classList.toggle('gyro', useGyro); document.body.classList.toggle('remote', remote.on);
-  for (const id of ['menu', 'over', 'pair']) $(id).classList.add('hide'); $('hud').classList.add('on');
+  for (const id of ['menu', 'over', 'pair', 'perks']) $(id).classList.add('hide'); $('hud').classList.add('on');
   state = 'play'; resetGame();
   if (mode === true && IS_TOUCH) {
     if (!useGyro) showTip('無法取得陀螺儀權限，已改用觸控瞄準', 4000);
     else setTimeout(() => { if (!ori.has && state === 'play') { useGyro = false; document.body.classList.remove('gyro'); showTip('此裝置沒有陀螺儀訊號，已改用觸控瞄準', 4000); } }, 1500);
   }
 }
-function gameOver() {
+function gameOver(timeUp) {
   state = 'dead'; input.fire = input.ads = false; document.exitPointerLock?.();
-  $('final').innerHTML = `撐到第 ${wave} 波 · 擊殺 ${kills}<br>得分 ${score}` + (remote.on ? '<br><small>在手機上按「再來一次」</small>' : '');
+  const rec = score > best(gameMode); if (rec) LS.set('b2best_' + gameMode, score); refreshModes();
+  $('overTitle').textContent = timeUp ? '時間到' : '你倒下了';
+  $('final').innerHTML = `${MODES[gameMode].n} · ${MODES[gameMode].time ? '' : `撐到第 ${wave} 波 · `}擊殺 ${kills}<br>得分 ${score}　` + (rec ? '<b style="color:#ffd23a">新紀錄！</b>' : `最佳 ${best(gameMode)}`) + (remote.on ? '<br><small>在手機上按「再來一次」</small>' : '');
   setTimeout(() => { $('over').classList.remove('hide'); $('hud').classList.remove('on'); }, 900);
 }
 $('bGyro').onclick = () => begin(true); $('bTouch').onclick = () => begin(false);
 $('bAgain').onclick = () => begin(lastMode === 'remote' && !remote.conn ? false : lastMode);
+$('bMenu').onclick = () => { $('over').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; player.set(0, EYE, 5); deathTilt = 0; setDark(false); };
 
 /* ───────────────────────── 手機遙控器（QR Code 配對，WebRTC 連線） ───────────────────────── */
 const remote = { on: false, conn: null, y: 0, p: 0, ly: 0, lp: 0, ty: 0, tp: 0, c: 0, sendT: 0 };
@@ -1003,7 +1158,7 @@ const CDN_PEER = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js',
 const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); });
 const setPair = t => $('pairMsg').textContent = t;
 function remoteSend(d) { const c = remote.conn; if (c && c.open) try { c.send(d); } catch (e) { } }
-function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, r: reloadT > 0 ? 1 : 0 }); }
+function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, r: reloadT > 0 ? 1 : 0, pk: state === 'perk' ? perkOpts.map(p => [p.n, p.d]) : 0 }); }
 function onRemote(d) {
   if (!d || typeof d !== 'object') return;
   if (d.t === 's') {
@@ -1011,7 +1166,8 @@ function onRemote(d) {
     remote.y = +d.y || 0; remote.p = +d.p || 0;
     if (remote.on && state === 'play') { input.mx = clamp(+d.mx || 0, -1, 1); input.my = clamp(+d.my || 0, -1, 1); input.fire = !!d.f; input.ads = !!d.a; }
   } else if (d.t === 'e') {
-    if (d.k === 'start') { if (state !== 'play') begin('remote'); }
+    if (d.k === 'start') { if (state !== 'play' && state !== 'perk') begin('remote'); }
+    else if (d.k === 'perk') pickPerk(d.i | 0);
     else if (remote.on && state === 'play') { if (d.k === 'reload') reload(); else if (d.k === 'next') switchWeapon(1); }
   }
 }
@@ -1099,9 +1255,9 @@ function updateWeapon(dt, mv) {
 }
 function updatePlayer(dt) {
   // 視角（開鏡時依視野縮小靈敏度）
-  const fovK = camera.fov / baseFov, sens = (IS_TOUCH ? .0042 : .0044) * fovK;
+  const fovK = camera.fov / baseFov, sens = (IS_TOUCH ? .0042 : .0044) * fovK * sensMul;
   if (remote.on) {
-    remote.ty += (remote.y - remote.ly) * fovK - lookDX * sens; remote.tp = clamp(remote.tp + (remote.p - remote.lp) * fovK - lookDY * sens, -1.35, 1.35);
+    remote.ty += (remote.y - remote.ly) * fovK * sensMul - lookDX * sens; remote.tp = clamp(remote.tp + (remote.p - remote.lp) * fovK * sensMul - lookDY * sens, -1.35, 1.35);
     remote.ly = remote.y; remote.lp = remote.p;
     const k = 1 - Math.exp(-dt * 20), dy = (remote.ty - yaw) * k, dp = (remote.tp - pitch) * k;
     yaw += dy; pitch += dp; lookDX = -dy * 400; lookDY = -dp * 400;      // 讓槍身跟著擺動
@@ -1121,7 +1277,7 @@ function updatePlayer(dt) {
   let mx = input.mx, my = input.my; const K = input.keys;
   if (K.KeyW || K.ArrowUp) my -= 1; if (K.KeyS || K.ArrowDown) my += 1; if (K.KeyA || K.ArrowLeft) mx -= 1; if (K.KeyD || K.ArrowRight) mx += 1;
   const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
-  const sn = Math.sin(yaw), cs = Math.cos(yaw), SPEED = 3.3 * (1 - ads * .5);
+  const sn = Math.sin(yaw), cs = Math.cos(yaw), SPEED = 3.3 * perk.speed * (1 - ads * .5);
   player.x += (mx * cs + my * sn) * SPEED * dt; player.z += (-mx * sn + my * cs) * SPEED * dt;
   player.x = clamp(player.x, -W / 2 + .4, W / 2 - .4); player.z = clamp(player.z, -D / 2 + .4, D / 2 - .4);
   for (const o of obstacles) { const ox = player.x - o.x, oz = player.z - o.z, d = Math.hypot(ox, oz), R = o.r + .34; if (d < R && d > 1e-4) { player.x = o.x + ox / d * R; player.z = o.z + oz / d * R; } }
@@ -1138,24 +1294,33 @@ function frame() {
     updateWeapon(dt, updatePlayer(dt));
     attackGrace = Math.max(0, attackGrace - dt);
     const alive = updateEnemies(dt, t);
-    if (toSpawn > 0) { spawnT -= dt; if (spawnT <= 0 && alive < Math.min(12, 4 + wave)) { spawnEnemy(); toSpawn--; spawnT = Math.max(.55, 2.3 - wave * .16) * rand(.7, 1.3); } }
-    else if (alive === 0 && waveGap <= 0) { waveGap = 4; hp = Math.min(100, hp + 20); showBanner('暫時安靜了…'); hud(); }
-    if (waveGap > 0) { waveGap -= dt; if (waveGap <= 0) startWave(wave + 1); }
+    if (MODES[gameMode].time) {         // 限時獵殺：持續湧出，越來越快
+      timeLeft -= dt; wave = 1 + Math.floor((MODES[gameMode].time - timeLeft) / 15); spawnT -= dt;
+      if (spawnT <= 0 && alive < Math.min(12, 5 + wave)) { spawnEnemy(); spawnT = Math.max(.4, 1.5 - wave * .13) * rand(.7, 1.3); }
+      const sec = Math.ceil(timeLeft); if (sec !== lastSec) { lastSec = sec; hud(); }
+      if (timeLeft <= 0) gameOver(true);
+    } else if (toSpawn > 0) { spawnT -= dt; if (spawnT <= 0 && alive < Math.min(12, 4 + wave)) { spawnEnemy(bossPending ? 'boss' : undefined); bossPending = false; toSpawn--; spawnT = Math.max(.55, 2.3 - wave * .16) * rand(.7, 1.3); } }
+    else if (alive === 0 && waveGap <= 0) { waveGap = 1.6; showBanner('暫時安靜了…', 1400); }
+    if (waveGap > 0 && state === 'play') { waveGap -= dt; if (waveGap <= 0) { hp = Math.min(perk.maxHp, hp + 15); hud(); offerPerks(); } }
+    if (comboT > 0) { comboT -= dt; if (comboT <= 0) { comboN = 0; $('combo').textContent = ''; } }
     deathTilt = 0;
   } else {
     updateEnemies(dt, t);
     if (state === 'dead') { deathTilt = Math.min(1, deathTilt + dt * 1.4); player.y = EYE - deathTilt * 1.2; }
-    else { yaw = Math.sin(t * .12) * .5; qBase.setFromEuler(eTmp.set(-.02, yaw, 0, 'YXZ')); }
+    else if (state === 'menu') { yaw = Math.sin(t * .12) * .5; qBase.setFromEuler(eTmp.set(-.02, yaw, 0, 'YXZ')); }
     updateWeapon(dt, 0);
   }
   camera.quaternion.copy(qBase).multiply(qTmp.setFromAxisAngle(X, recoilP + rand(-1, 1) * shake)).multiply(qTmp.setFromAxisAngle(Z, rand(-1, 1) * shake * .6 + deathTilt * .9));
 
   if (flashT > 0) { flashT -= dt; if (flashT <= 0) flash.visible = false; }
   muzzleLight.intensity *= Math.exp(-dt * 28);
+  updateSpits(dt); updatePickups(dt, t);
+  const bp = bossE && !bossE.dead ? Math.ceil(clamp(bossE.hp / bossE.maxHp, 0, 1) * 100) : -1;
+  if (bp !== lastBoss) { lastBoss = bp; $('bossbar').style.opacity = bp < 0 ? 0 : 1; $('bossbar').firstChild.style.width = Math.max(0, bp) + '%'; }
   sparks.update(dt); blood.update(dt); smoke.update(dt);
   for (const p of pools) if (p.visible && p.scale.x < p.userData.g) p.scale.setScalar(Math.min(p.userData.g, p.scale.x + dt * .35));
   damageFx = Math.max(0, damageFx - dt * 1.3);
-  finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < 30 ? .3 : 0);
+  finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < perk.maxHp * .3 ? .3 : 0);
   finalPass.uniforms.uTime.value = t;
   if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2.5, 8); sfx.drip(); } }
   if (remote.conn) { remote.sendT -= dt; if (remote.sendT <= 0) { remote.sendT = .2; remoteStatus(); } }
@@ -1172,7 +1337,7 @@ function frame() {
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 qBase.identity(); setWeapon(0);
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
