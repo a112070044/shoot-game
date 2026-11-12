@@ -1,0 +1,871 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#000000">
+<title>地下室 B2</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none;
+    font-family:-apple-system,"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif;color:#d8d2c4;
+    -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+  canvas{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none}
+  #touch{position:fixed;inset:0;touch-action:none;z-index:2}
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:3;display:none}
+  #hud.on{display:block}
+  #cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:.8}
+  #cross i{position:absolute;background:#e9e2cf;box-shadow:0 0 2px #000}
+  #cross i:nth-child(1){left:12px;top:12px;width:2px;height:2px;border-radius:50%}
+  #cross i:nth-child(2){left:0;top:12.5px;width:7px;height:1px}
+  #cross i:nth-child(3){right:0;top:12.5px;width:7px;height:1px}
+  #cross i:nth-child(4){left:12.5px;top:0;width:1px;height:7px}
+  #cross i:nth-child(5){left:12.5px;bottom:0;width:1px;height:7px}
+  #hit{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;opacity:0;transform:rotate(45deg)}
+  #hit::before,#hit::after{content:"";position:absolute;background:#ff5a4a}
+  #hit::before{left:0;right:0;top:14px;height:2px}
+  #hit::after{top:0;bottom:0;left:14px;width:2px}
+  #hit.head::before,#hit.head::after{background:#ffd23a}
+  .tl{position:absolute;left:calc(14px + env(safe-area-inset-left));top:calc(12px + env(safe-area-inset-top))}
+  .lbl{font-size:11px;letter-spacing:.2em;opacity:.6}
+  #hpbar{width:150px;height:8px;margin-top:5px;border:1px solid rgba(216,210,196,.45);background:rgba(0,0,0,.4)}
+  #hpfill{height:100%;width:100%;background:#b93a2c;transition:width .15s}
+  .tc{position:absolute;left:50%;top:calc(10px + env(safe-area-inset-top));transform:translateX(-50%);text-align:center;
+    font-size:12px;letter-spacing:.2em;opacity:.75;white-space:nowrap}
+  #score{font-size:18px;letter-spacing:.1em;font-variant-numeric:tabular-nums}
+  #ammo{position:absolute;right:calc(128px + env(safe-area-inset-right));bottom:calc(22px + env(safe-area-inset-bottom));
+    font-size:30px;font-weight:600;font-variant-numeric:tabular-nums;text-shadow:0 0 6px #000}
+  #ammo small{font-size:13px;opacity:.6;font-weight:400}
+  #ammo.low{color:#ff5a4a}
+  body.desk #ammo{right:28px}
+  #banner{position:absolute;left:0;right:0;top:26%;text-align:center;font-size:26px;letter-spacing:.5em;
+    opacity:0;transition:opacity .5s;text-shadow:0 0 12px #000}
+  #banner.on{opacity:.92}
+  #tip{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));text-align:center;font-size:12px;opacity:0;transition:opacity .4s}
+  #tip.on{opacity:.7}
+  .btn{position:absolute;border-radius:50%;border:1.5px solid rgba(216,210,196,.5);background:rgba(20,18,16,.35);
+    display:flex;align-items:center;justify-content:center;font-size:12px;letter-spacing:.1em;color:#d8d2c4;pointer-events:auto}
+  .btn.act{background:rgba(185,58,44,.5)}
+  #fire{right:calc(22px + env(safe-area-inset-right));bottom:calc(26px + env(safe-area-inset-bottom));width:88px;height:88px;font-size:14px}
+  #reload{right:calc(122px + env(safe-area-inset-right));bottom:calc(74px + env(safe-area-inset-bottom));width:54px;height:54px}
+  #center{right:calc(14px + env(safe-area-inset-right));top:calc(12px + env(safe-area-inset-top));width:46px;height:46px;font-size:11px;display:none}
+  body.gyro #center{display:flex}
+  body.desk .btn,body.desk #stick{display:none}
+  #stick{position:absolute;width:110px;height:110px;margin:-55px 0 0 -55px;border-radius:50%;
+    border:1.5px solid rgba(216,210,196,.3);display:none}
+  #knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px 0 0 -23px;border-radius:50%;background:rgba(216,210,196,.3)}
+  .screen{position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    background:radial-gradient(ellipse at 50% 35%,rgba(40,30,18,.55),rgba(0,0,0,.94) 70%);text-align:center;padding:20px;box-sizing:border-box}
+  .screen.hide{display:none}
+  h1{margin:0;font-size:clamp(38px,9vw,72px);letter-spacing:.35em;text-indent:.35em;font-weight:700;color:#e6dcc4;
+    text-shadow:0 0 28px rgba(255,170,80,.35)}
+  .sub{margin:8px 0 26px;font-size:13px;letter-spacing:.4em;text-indent:.4em;opacity:.55}
+  button{font:inherit;color:#e6dcc4;background:rgba(185,58,44,.2);border:1px solid rgba(230,220,196,.55);
+    padding:13px 28px;margin:6px;min-width:230px;font-size:16px;letter-spacing:.15em;border-radius:3px}
+  button.alt{background:transparent;border-color:rgba(230,220,196,.28);font-size:14px}
+  button:active{background:rgba(185,58,44,.55)}
+  .help{margin-top:20px;font-size:12px;line-height:1.9;opacity:.55;max-width:460px}
+  #final{font-size:15px;line-height:2;margin:4px 0 20px;opacity:.85}
+  #over h1{color:#b93a2c;text-shadow:0 0 30px rgba(185,58,44,.5)}
+  #err{position:fixed;left:0;right:0;bottom:0;z-index:99;font-size:11px;color:#f88;padding:6px;white-space:pre-wrap;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="touch"></div>
+<div id="hud">
+  <div class="tl"><div class="lbl">生命</div><div id="hpbar"><div id="hpfill"></div></div></div>
+  <div class="tc"><div id="wave">第 1 波</div><div id="score">0</div></div>
+  <div id="cross"><i></i><i></i><i></i><i></i><i></i></div>
+  <div id="hit"></div>
+  <div id="banner"></div>
+  <div id="ammo">24 <small>/ ∞</small></div>
+  <div id="tip"></div>
+  <div id="stick"><div id="knob"></div></div>
+  <div class="btn" id="fire">射擊</div>
+  <div class="btn" id="reload">換彈</div>
+  <div class="btn" id="center">回正</div>
+</div>
+
+<div class="screen" id="menu">
+  <h1>地下室</h1>
+  <div class="sub">B2 · 燈快熄了</div>
+  <button id="bGyro">開始 · 陀螺儀瞄準</button>
+  <button id="bTouch" class="alt">開始 · 觸控瞄準</button>
+  <div class="help" id="help"></div>
+</div>
+<div class="screen hide" id="over">
+  <h1>你倒下了</h1>
+  <div id="final"></div>
+  <button id="bAgain">再來一次</button>
+</div>
+<div id="err"></div>
+
+<script>
+  window.addEventListener('error', e => { document.getElementById('err').textContent = '載入錯誤：' + (e.message || '資源無法載入，請確認網路連線'); });
+</script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+const $ = id => document.getElementById(id);
+const IS_TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
+document.body.classList.toggle('desk', !IS_TOUCH);
+$('help').innerHTML = IS_TOUCH
+  ? '轉動手機瞄準 · 左半畫面拖曳移動 · 右半畫面拖曳轉身<br>按住「射擊」連發 · 建議橫向握持並開啟聲音'
+  : 'WASD 移動 · 滑鼠瞄準 · 左鍵射擊 · R 換彈';
+if (!IS_TOUCH) { $('bGyro').textContent = '開始'; $('bTouch').style.display = 'none'; }
+
+/* ───────────────────────── 常數 ───────────────────────── */
+const W = 22, D = 30, H = 3.4, DOOR = 2.6, EYE = 1.65;
+const rand = (a = 1, b) => b === undefined ? Math.random() * a : a + Math.random() * (b - a);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const smooth = (a, b, x) => { x = clamp((x - a) / (b - a), 0, 1); return x * x * (3 - 2 * x); };
+
+/* ───────────────────────── 渲染器 ───────────────────────── */
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+let pixelRatio = Math.min(devicePixelRatio || 1, IS_TOUCH ? 1.5 : 2);
+renderer.setPixelRatio(pixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 0.95;
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x000000);
+scene.fog = new THREE.FogExp2(0x010101, 0.042);
+const camera = new THREE.PerspectiveCamera(70, 1, 0.04, 60);
+camera.position.set(0, EYE, 5);
+scene.add(camera);
+
+/* ───────────────────────── 程序化 PBR 水泥貼圖 ───────────────────────── */
+function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
+function makeNoise(seed) {
+  const r = mulberry(seed), N = 256, g = new Float32Array(N * N);
+  for (let i = 0; i < g.length; i++) g[i] = r();
+  const n = (x, y, px, py) => {
+    const xi = Math.floor(x), yi = Math.floor(y);
+    let fx = x - xi, fy = y - yi; fx = fx * fx * (3 - 2 * fx); fy = fy * fy * (3 - 2 * fy);
+    const x0 = ((xi % px) + px) % px, x1 = (x0 + 1) % px, y0 = ((yi % py) + py) % py, y1 = (y0 + 1) % py;
+    const a = g[y0 * N + x0], b = g[y0 * N + x1], c = g[y1 * N + x0], d = g[y1 * N + x1];
+    return a + (b - a) * fx + (c - a) * fy + (a - b - c + d) * fx * fy;
+  };
+  const fbm = (u, v, f, oct) => { let s = 0, a = .5, t = 0; for (let o = 0; o < oct; o++) { s += a * n(u * f, v * f, f, f); t += a; a *= .5; f *= 2; } return s / t; };
+  return { n, fbm, r };
+}
+function dataTex(data, S, srgb) {
+  const t = new THREE.DataTexture(data, S, S, THREE.RGBAFormat);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+  t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy());
+  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.needsUpdate = true; return t;
+}
+// kind: 'floor'（積水）、'wall'（模板縫、水痕、牆腳返潮；v 方向只鋪一次）、'ceil'
+function makeConcrete(S, seed, kind) {
+  const { n, fbm, r } = makeNoise(seed), P = S * S;
+  const Hh = new Float32Array(P), wet = new Float32Array(P), dark = new Float32Array(P), cav = new Float32Array(P),
+    fineA = new Float32Array(P), tintA = new Float32Array(P);
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = y * S + x, u = x / S, v = y / S;
+    const base = fbm(u, v, 4, 6), fine = fbm(u + .3, v + .6, 48, 2);
+    Hh[i] = base * .55 + fine * .3 + r() * .07; fineA[i] = fine;
+    dark[i] = smooth(.5, .72, fbm(u + .37, v + .11, 3, 4)) * .4;
+    if (kind === 'floor') wet[i] = smooth(.53, .63, fbm(u + .7, v + .2, 3, 3));
+    else if (kind === 'wall') {
+      const streak = smooth(.55, .85, n(u * 28, v * 2 + 9, 28, 256)) * smooth(.15, .9, v);
+      const damp = smooth(.34, 0, v + (fbm(u, v, 8, 2) - .5) * .25);
+      wet[i] = clamp(streak * .55 + damp * .75, 0, 1);
+      dark[i] += streak * .35 + damp * .3;
+      tintA[i] = damp + smooth(.7, .9, n(u * 14 + 3, v * 1.5, 14, 256)) * smooth(.3, 1, v) * -1.2; // 正：青苔；負：鏽水
+    } else dark[i] += smooth(.6, .8, fbm(u + .2, v + .8, 5, 3)) * .3;
+  }
+  // 裂縫（隨機遊走）與孔隙
+  const stamp = (x, y, a) => { x = ((x | 0) % S + S) % S; y = ((y | 0) % S + S) % S; const i = y * S + x; cav[i] = Math.max(cav[i], a); };
+  for (let k = 0, K = kind === 'ceil' ? 3 : 6; k < K; k++) {
+    let x = r() * S, y = r() * S, a = r() * 6.28; const len = S * (.3 + r() * .7);
+    for (let s = 0; s < len; s++) {
+      a += (r() - .5) * .7; x += Math.cos(a); y += Math.sin(a);
+      stamp(x, y, 1); stamp(x + 1, y, .5); stamp(x, y + 1, .5);
+      if (r() < .004) { let bx = x, by = y, ba = a + (r() < .5 ? 1 : -1); for (let t = 0; t < S * .15; t++) { ba += (r() - .5) * .8; bx += Math.cos(ba); by += Math.sin(ba); stamp(bx, by, .7); } }
+    }
+  }
+  for (let k = 0; k < P * .003; k++) { const x = r() * S, y = r() * S; stamp(x, y, .8); if (r() < .3) { stamp(x + 1, y, .6); stamp(x, y + 1, .6); stamp(x + 1, y + 1, .4); } }
+  if (kind === 'wall') { // 模板縫與拉桿孔
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+      const i = y * S + x;
+      if (y % (S / 4) < 2 || x % (S / 2) < 2) cav[i] = Math.max(cav[i], .45);
+      const hx = (x + S / 8) % (S / 4) - S / 8, hy = (y + S / 8) % (S / 4) - S / 8, d = Math.hypot(hx, hy);
+      if (d < S / 110) cav[i] = Math.max(cav[i], .9);
+    }
+  }
+  for (let i = 0; i < P; i++) { Hh[i] -= cav[i] * .5; if (kind === 'floor') Hh[i] = Hh[i] * (1 - wet[i] * .93) + .25 * wet[i]; }
+  const col = new Uint8Array(P * 4), nor = new Uint8Array(P * 4), orm = new Uint8Array(P * 4);
+  const ns = kind === 'floor' ? 3.4 : 2.8, at = (x, y) => Hh[((y + S) % S) * S + (x + S) % S];
+  for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
+    const i = y * S + x, j = i * 4;
+    let nx = -(at(x + 1, y) - at(x - 1, y)) * ns, ny = -(at(x, y + 1) - at(x, y - 1)) * ns, nz = 1 / (S / 256);
+    const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
+    nor[j] = nx * 127.5 + 127.5; nor[j + 1] = ny * 127.5 + 127.5; nor[j + 2] = nz * 127.5 + 127.5; nor[j + 3] = 255;
+    let c = .52 + (Hh[i] - .4) * .45 + (fineA[i] - .5) * .12;
+    c *= (1 - dark[i]) * (1 - cav[i] * .65) * (1 - wet[i] * (kind === 'floor' ? .5 : .25));
+    let R = c, G = c * .985, B = c * .93;
+    const t = tintA[i];
+    if (t > 0) { R *= 1 - t * .22; B *= 1 - t * .25; } else if (t < 0) { G *= 1 + t * .28; B *= 1 + t * .5; }
+    col[j] = clamp(R, 0, 1) * 255; col[j + 1] = clamp(G, 0, 1) * 255; col[j + 2] = clamp(B, 0, 1) * 255; col[j + 3] = 255;
+    const rough = clamp(.93 - wet[i] * (kind === 'floor' ? .82 : .5) + (fineA[i] - .5) * .2 + cav[i] * .1, .07, 1);
+    orm[j] = (1 - cav[i] * .75) * 255; orm[j + 1] = rough * 255; orm[j + 2] = 0; orm[j + 3] = 255;
+  }
+  return { map: dataTex(col, S, true), normalMap: dataTex(nor, S), orm: dataTex(orm, S) };
+}
+function concreteMat(t, extra = {}) {
+  return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.orm, aoMap: t.orm, metalness: 0, ...extra });
+}
+const TS = IS_TOUCH ? 512 : 1024;
+const tFloor = makeConcrete(TS, 11, 'floor'), tWall = makeConcrete(TS, 29, 'wall'), tCeil = makeConcrete(256, 53, 'ceil');
+const mFloor = concreteMat(tFloor, { normalScale: new THREE.Vector2(1.2, 1.2) });
+const mWall = concreteMat(tWall, { normalScale: new THREE.Vector2(1.1, 1.1) });
+const mCeil = concreteMat(tCeil, { color: 0x9a9a96 });
+
+function woodTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  g.fillStyle = '#4a3523'; g.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 900; i++) { g.fillStyle = `rgba(${rand(20, 90) | 0},${rand(15, 55) | 0},${rand(5, 30) | 0},.25)`; g.fillRect(rand(128), rand(128), rand(4, 40), 1); }
+  g.fillStyle = 'rgba(0,0,0,.6)'; for (let i = 0; i < 4; i++) g.fillRect(0, i * 32, 128, 2);
+  g.strokeStyle = 'rgba(0,0,0,.55)'; g.lineWidth = 9; g.strokeRect(4, 4, 120, 120);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+const mWood = new THREE.MeshStandardMaterial({ map: woodTex(), roughness: .85, normalMap: tCeil.normalMap });
+const mRust = new THREE.MeshStandardMaterial({ color: 0x4b3226, roughness: .7, metalness: .55, normalMap: tCeil.normalMap, roughnessMap: tCeil.orm });
+const mMetalDark = new THREE.MeshStandardMaterial({ color: 0x1c2420, roughness: .5, metalness: .6 });
+
+/* ───────────────────────── 場景幾何 ───────────────────────── */
+const solids = [];            // 子彈可擊中的靜態物件
+const obstacles = [];         // 圓形碰撞 {x,z,r}
+function boxUV(geo, w, h, d, tile, vOff = 0) {
+  const uv = geo.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
+  for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / tile, uv.getY(i) * dims[f][1] / tile + vOff); }
+}
+function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
+  const g = new THREE.BoxGeometry(w, h, d); boxUV(g, w, h, d, tile, vOff);
+  const m = new THREE.Mesh(g, mat); m.position.set(x, y, z);
+  m.castShadow = shadow; m.receiveShadow = true; scene.add(m); solids.push(m); return m;
+}
+{
+  const fg = new THREE.PlaneGeometry(44, 52); fg.rotateX(-Math.PI / 2);
+  const uv = fg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 44 / 5, uv.getY(i) * 52 / 5);
+  const floor = new THREE.Mesh(fg, mFloor); floor.receiveShadow = true; scene.add(floor); solids.push(floor);
+  const cg = fg.clone(); cg.rotateX(Math.PI);
+  const ceil = new THREE.Mesh(cg, mCeil); ceil.position.y = H; ceil.receiveShadow = true; scene.add(ceil); solids.push(ceil);
+
+  const T = .5, hw = W / 2, hd = D / 2, g = DOOR / 2, CL = 8;
+  const segX = (x1, x2, z) => addBox(x2 - x1, H, T, (x1 + x2) / 2, H / 2, z, mWall);
+  const segZ = (z1, z2, x) => addBox(T, H, z2 - z1, x, H / 2, (z1 + z2) / 2, mWall);
+  for (const s of [-1, 1]) {
+    const zo = s * (hd + T / 2), xo = s * (hw + T / 2);
+    segX(-hw - T, -g, zo); segX(g, hw + T, zo);                          // 南北牆（中間留門）
+    segZ(-hd, -g, xo); segZ(g, hd, xo);                                  // 東西牆
+    addBox(DOOR, H - 2.5, T, 0, 2.5 + (H - 2.5) / 2, zo, mWall, H, 2.5 / H);   // 門楣
+    addBox(T, H - 2.5, DOOR, xo, 2.5 + (H - 2.5) / 2, 0, mWall, H, 2.5 / H);
+    // 門後漆黑走廊
+    for (const q of [-1, 1]) {
+      segZ(Math.min(s * (hd + T), s * (hd + CL)), Math.max(s * (hd + T), s * (hd + CL)), q * (g + T / 2));
+      segX(Math.min(s * (hw + T), s * (hw + CL)), Math.max(s * (hw + T), s * (hw + CL)), q * (g + T / 2));
+    }
+    segX(-g - T, g + T, s * (hd + CL + T / 2)); segZ(-g - T, g + T, s * (hw + CL + T / 2));
+  }
+  // 柱子
+  for (const x of [-4.6, 4.6]) for (const z of [-8.5, 0, 8.5]) {
+    addBox(.85, H, .85, x, H / 2, z, mWall);
+    addBox(1.05, .25, 1.05, x, H - .125, z, mWall, H, .5);
+    obstacles.push({ x, z, r: .62 });
+  }
+  // 天花板管線
+  for (const [x, y, rr] of [[-hw + .45, H - .4, .11], [-hw + .8, H - .32, .06], [hw - .5, H - .45, .13], [2.2, H - .2, .05]]) {
+    const p = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, D, 8), mRust);
+    p.rotation.x = Math.PI / 2; p.position.set(x, y, 0); p.castShadow = true; p.receiveShadow = true; scene.add(p);
+  }
+  const duct = addBox(.7, .4, D, -2.4, H - .25, 0, mMetalDark, 2); duct.castShadow = false;
+  // 木箱與鐵桶
+  const crate = (x, z, s, ry = 0, y = 0) => { const m = addBox(s, s, s, x, y + s / 2, z, mWood, s); m.rotation.y = ry; if (!y) obstacles.push({ x, z, r: s * .68 }); };
+  crate(-8.6, -11.5, 1.1, .2); crate(-7.4, -12.2, .9, -.3); crate(-8.5, -11.6, .8, .6, 1.1);
+  crate(8.4, 10.8, 1.2, .1); crate(8.2, 9.3, .8, .5); crate(-9, 5.5, 1, -.15); crate(6.5, -3.4, .9, .4);
+  const barrel = (x, z) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(.33, .33, 1, 12), mRust); m.position.set(x, .5, z);
+    m.castShadow = m.receiveShadow = true; scene.add(m); solids.push(m); obstacles.push({ x, z, r: .42 });
+  };
+  barrel(8.2, -12.4); barrel(9, -11.7); barrel(-9.3, 12.6); barrel(-6.8, 1.2);
+}
+
+/* ───────────────────────── 燈光 ───────────────────────── */
+scene.add(new THREE.HemisphereLight(0x27313a, 0x050403, 0.22));
+
+const lamps = [];
+function addLamp(x, z, color, intensity, shadow, glitch, cord) {
+  const pivot = new THREE.Group(); pivot.position.set(x, H, z); scene.add(pivot);
+  const wire = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, cord, 4), mMetalDark); wire.position.y = -cord / 2; pivot.add(wire);
+  const shade = new THREE.Mesh(new THREE.ConeGeometry(.24, .16, 10, 1, true),
+    new THREE.MeshStandardMaterial({ color: 0x1d3a2c, roughness: .45, metalness: .5, side: THREE.DoubleSide }));
+  shade.position.y = -cord - .05; shade.castShadow = shadow; pivot.add(shade);
+  const bulbMat = new THREE.MeshBasicMaterial({ color });
+  const bulb = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), bulbMat); bulb.position.y = -cord - .14; pivot.add(bulb);
+  const light = new THREE.PointLight(color, intensity, 17, 2); light.position.copy(bulb.position);
+  if (shadow) {
+    light.castShadow = true; light.shadow.mapSize.set(IS_TOUCH ? 512 : 1024, IS_TOUCH ? 512 : 1024);
+    light.shadow.camera.near = .12; light.shadow.camera.far = 17; light.shadow.bias = -.004; light.shadow.normalBias = .04; light.shadow.radius = 3;
+  }
+  pivot.add(light);
+  lamps.push({ pivot, light, bulbMat, base: intensity, color: new THREE.Color(color), glitch, off: 0, burst: 0, k: 1,
+    ph: rand(6.28), w1: rand(1.1, 1.5), w2: rand(.7, 1), amp: rand(.05, .09) });
+}
+addLamp(0, 0, 0xffbe73, 34, true, .25, .95);     // 中央暖黃主燈（投影）
+addLamp(0, -9.5, 0xcfe39a, 20, false, 1.6, .8);   // 北側慘綠、嚴重接觸不良
+addLamp(0, 9.5, 0xffb060, 18, false, .5, 1.05);   // 南側昏黃
+
+// 緊急紅燈：北門上方旋轉警示燈 + 南門脈動紅燈
+const beacon = new THREE.SpotLight(0xff1a08, 90, 20, .55, .6, 2);
+beacon.position.set(0, H - .35, -D / 2 + .5); scene.add(beacon, beacon.target);
+const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff2a10 });
+{
+  const b = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, .14, 8), beaconMat); b.position.copy(beacon.position); scene.add(b);
+  const b2 = b.clone(); b2.position.set(0, 2.75, D / 2 - .12); scene.add(b2);
+}
+const redPulse = new THREE.PointLight(0xff1a08, 4, 9, 2); redPulse.position.set(0, 2.7, D / 2 - .5); scene.add(redPulse);
+
+// 槍燈（手電筒）
+const torch = new THREE.SpotLight(0xdfe8ff, 15, 34, .46, .6, 1);
+torch.position.set(.17, -.24, -.72); camera.add(torch); camera.add(torch.target); torch.target.position.set(.03, -.03, -6);
+torch.castShadow = true; torch.shadow.mapSize.set(512, 512); torch.shadow.camera.near = .3; torch.shadow.camera.far = 30; torch.shadow.bias = -.002;
+// 槍口火光
+const muzzleLight = new THREE.PointLight(0xffa64a, 0, 11, 2); camera.add(muzzleLight); muzzleLight.position.set(.16, -.1, -.75);
+
+/* ───────────────────────── 槍 ───────────────────────── */
+const gun = new THREE.Group(); camera.add(gun);
+const GUN_BASE = new THREE.Vector3(.17, -.175, -.43);
+const mGun = new THREE.MeshStandardMaterial({ color: 0x25282c, roughness: .38, metalness: .75, emissive: 0x060708, flatShading: true });
+const mGrip = new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: .9, emissive: 0x030303, flatShading: true });
+const mGlove = new THREE.MeshStandardMaterial({ color: 0x1f2321, roughness: .95, emissive: 0x040404, flatShading: true });
+const gp = (geo, mat, x, y, z, rx = 0, parent = gun) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; parent.add(m); return m; };
+const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
+const slide = new THREE.Group(); gun.add(slide);
+gp(B(.046, .05, .3), mGun, 0, 0, -.05, 0, slide);
+gp(B(.048, .012, .09), mGrip, 0, .012, .04, 0, slide);                       // 滑套防滑紋
+gp(B(.008, .014, .012), mGun, -.014, .032, .09, 0, slide); gp(B(.008, .014, .012), mGun, .014, .032, .09, 0, slide);
+gp(B(.006, .014, .012), mGun, 0, .032, -.19, 0, slide);
+const mDot = new THREE.MeshBasicMaterial({ color: new THREE.Color(.12, .8, .2) });
+gp(B(.005, .005, .002), mDot, -.014, .034, .097, 0, slide); gp(B(.005, .005, .002), mDot, .014, .034, .097, 0, slide);
+gp(B(.04, .032, .27), mGun, 0, -.038, -.045);                               // 槍身
+gp(new THREE.CylinderGeometry(.011, .011, .05, 6), mGun, 0, .002, -.215, Math.PI / 2);
+gp(B(.042, .135, .062), mGrip, 0, -.115, .075, .28);                        // 握把
+gp(B(.044, .016, .07), mGun, 0, -.185, .098, .28);                          // 彈匣底
+gp(B(.01, .008, .07), mGun, 0, -.085, 0); gp(B(.01, .04, .008), mGun, 0, -.068, -.035);
+gp(new THREE.CylinderGeometry(.02, .017, .09, 8), mGun, 0, -.072, -.14, Math.PI / 2); // 槍燈
+gp(B(.085, .1, .095), mGlove, .004, -.12, .082, .28);                       // 手
+gp(B(.08, .08, .5), mGlove, .05, -.22, .33, -.32).rotation.y = -.22;        // 前臂
+const muzzle = new THREE.Object3D(); muzzle.position.set(0, .002, -.25); gun.add(muzzle);
+
+function flashTex() {
+  const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+  const rg = g.createRadialGradient(64, 64, 2, 64, 64, 60);
+  rg.addColorStop(0, 'rgba(255,255,255,1)'); rg.addColorStop(.25, 'rgba(255,220,140,.8)'); rg.addColorStop(.6, 'rgba(255,120,30,.25)'); rg.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = rg; g.fillRect(0, 0, 128, 128);
+  g.globalCompositeOperation = 'lighter'; g.translate(64, 64);
+  for (let i = 0; i < 9; i++) {
+    g.rotate(rand(.4, 1)); const L = rand(34, 62);
+    const lg = g.createLinearGradient(0, 0, L, 0); lg.addColorStop(0, 'rgba(255,240,200,.9)'); lg.addColorStop(1, 'rgba(255,120,20,0)');
+    g.fillStyle = lg; g.beginPath(); g.moveTo(0, -5); g.lineTo(L, 0); g.lineTo(0, 5); g.fill();
+  }
+  return new THREE.CanvasTexture(c);
+}
+const flashMat = new THREE.MeshBasicMaterial({ map: flashTex(), color: new THREE.Color(5, 3.6, 1.8), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
+const flash = new THREE.Group(); muzzle.add(flash); flash.visible = false;
+flash.add(new THREE.Mesh(new THREE.PlaneGeometry(.26, .26), flashMat));
+for (const rz of [0, Math.PI / 2]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(.4, .13), flashMat); m.rotation.set(0, Math.PI / 2, 0); m.rotateX(rz); m.position.z = -.14; flash.add(m); }
+
+/* ───────────────────────── 粒子系統 ───────────────────────── */
+class Particles {
+  constructor(n, additive) {
+    this.n = n; this.i = 0;
+    this.pos = new Float32Array(n * 3); this.col = new Float32Array(n * 4); this.size = new Float32Array(n);
+    this.vel = new Float32Array(n * 3); this.life = new Float32Array(n); this.max = new Float32Array(n); this.grav = new Float32Array(n); this.s0 = new Float32Array(n);
+    const g = this.geo = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(this.pos, 3));
+    g.setAttribute('aColor', new THREE.BufferAttribute(this.col, 4));
+    g.setAttribute('aSize', new THREE.BufferAttribute(this.size, 1));
+    this.mat = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending,
+      uniforms: { uScale: { value: 500 } },
+      vertexShader: `attribute vec4 aColor; attribute float aSize; uniform float uScale; varying vec4 vC;
+        void main(){ vC=aColor; vec4 mv=modelViewMatrix*vec4(position,1.); gl_Position=projectionMatrix*mv; gl_PointSize=aSize*uScale/max(.05,-mv.z); }`,
+      fragmentShader: `varying vec4 vC; void main(){ float d=length(gl_PointCoord-.5); if(d>.5) discard; gl_FragColor=vec4(vC.rgb, vC.a*smoothstep(.5,.2,d)); }`
+    });
+    this.pts = new THREE.Points(g, this.mat); this.pts.frustumCulled = false; scene.add(this.pts);
+  }
+  emit(x, y, z, vx, vy, vz, life, size, r, g, b, grav) {
+    const i = this.i; this.i = (i + 1) % this.n;
+    this.pos.set([x, y, z], i * 3); this.vel.set([vx, vy, vz], i * 3); this.col.set([r, g, b, 1], i * 4);
+    this.life[i] = this.max[i] = life; this.size[i] = this.s0[i] = size; this.grav[i] = grav;
+  }
+  update(dt) {
+    const { pos, vel, life, max, col, size, grav, n } = this;
+    for (let i = 0; i < n; i++) {
+      if (life[i] <= 0) continue;
+      life[i] -= dt; const j = i * 3;
+      if (life[i] <= 0) { size[i] = 0; continue; }
+      vel[j + 1] -= grav[i] * dt;
+      pos[j] += vel[j] * dt; pos[j + 1] += vel[j + 1] * dt; pos[j + 2] += vel[j + 2] * dt;
+      if (pos[j + 1] < .015) { pos[j + 1] = .015; vel[j] = vel[j + 1] = vel[j + 2] = 0; }
+      col[i * 4 + 3] = Math.min(1, life[i] / max[i] * 2);
+    }
+    this.geo.attributes.position.needsUpdate = this.geo.attributes.aColor.needsUpdate = this.geo.attributes.aSize.needsUpdate = true;
+  }
+}
+const sparks = new Particles(260, true), blood = new Particles(320, false), smoke = new Particles(60, false);
+
+// 彈孔與血泊
+const holes = [], holeGeo = new THREE.CircleGeometry(.035, 8);
+const holeMat = new THREE.MeshBasicMaterial({ color: 0x030303, polygonOffset: true, polygonOffsetFactor: -4, transparent: true, opacity: .85 });
+let holeI = 0;
+for (let i = 0; i < 40; i++) { const m = new THREE.Mesh(holeGeo, holeMat); m.visible = false; scene.add(m); holes.push(m); }
+const pools = [], poolMat = new THREE.MeshStandardMaterial({ color: 0x3d0404, roughness: .12, metalness: 0, transparent: true, opacity: .88, polygonOffset: true, polygonOffsetFactor: -3 });
+let poolI = 0;
+for (let i = 0; i < 12; i++) { const g = new THREE.CircleGeometry(.55, 14); g.rotateX(-Math.PI / 2); const m = new THREE.Mesh(g, poolMat); m.visible = false; m.receiveShadow = true; scene.add(m); pools.push(m); }
+
+/* ───────────────────────── 後處理 ───────────────────────── */
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.75, 0.55, 0.82);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+const finalPass = new ShaderPass({
+  uniforms: { tDiffuse: { value: null }, uTime: { value: 0 }, uDamage: { value: 0 }, uRes: { value: new THREE.Vector2(1, 1) } },
+  vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=vec4(position.xy,0.,1.); }`,
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uTime,uDamage; uniform vec2 uRes; varying vec2 vUv;
+    float hash(vec2 p){ p=fract(p*vec2(123.34,456.21)); p+=dot(p,p+45.32); return fract(p.x*p.y); }
+    void main(){
+      vec4 c=texture2D(tDiffuse,vUv); vec2 d=vUv-.5; float r=length(d*vec2(1.,.9));
+      c.rgb*=mix(.28,1.,smoothstep(.82,.22,r));                          // 暗角
+      c.rgb=mix(c.rgb,vec3(.5,.0,.0)*(.5+c.r),smoothstep(.18,.72,r)*clamp(uDamage,0.,1.)*.85); // 受傷紅暈
+      c.rgb+=(hash(floor(vUv*uRes)+fract(uTime)*91.7)-.5)*.045;         // 底片顆粒（同時抑制暗部色帶）
+      gl_FragColor=c; }`
+});
+composer.addPass(finalPass);
+
+let vw = 1, vh = 1;
+function resize() {
+  vw = innerWidth; vh = innerHeight;
+  renderer.setPixelRatio(pixelRatio); renderer.setSize(vw, vh);
+  composer.setPixelRatio(pixelRatio); composer.setSize(vw, vh);
+  camera.aspect = vw / vh; camera.fov = vw >= vh ? 68 : 88; camera.updateProjectionMatrix();
+  const s = vh * pixelRatio * .5 / Math.tan(camera.fov * Math.PI / 360);
+  sparks.mat.uniforms.uScale.value = blood.mat.uniforms.uScale.value = smoke.mat.uniforms.uScale.value = s;
+  finalPass.uniforms.uRes.value.set(vw * pixelRatio / 1.5, vh * pixelRatio / 1.5);
+  const p = vw < vh ? .78 : 1; GUN_BASE.set(.17 * p, -.175, -.43);
+}
+addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 250)); resize();
+
+/* ───────────────────────── 音效（WebAudio 合成） ───────────────────────── */
+let ac = null, master, noiseBuf;
+function initAudio() {
+  if (ac) { ac.resume(); return; }
+  const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
+  ac = new AC(); master = ac.createGain(); master.gain.value = .7;
+  const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+  noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  // 環境：低頻轟鳴 + 電流哼聲
+  const n = ac.createBufferSource(); n.buffer = noiseBuf; n.loop = true; const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 110;
+  const g = ac.createGain(); g.gain.value = .22; n.connect(f); f.connect(g); g.connect(master); n.start();
+  for (const [fr, v] of [[50, .018], [100, .008]]) { const o = ac.createOscillator(); o.frequency.value = fr; const og = ac.createGain(); og.gain.value = v; o.connect(og); og.connect(master); o.start(); }
+}
+function noise(dur, type, f0, f1, vol, q = 1) {
+  if (!ac) return; const t = ac.currentTime, s = ac.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = rand(.85, 1.15);
+  const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  s.connect(f); f.connect(g); g.connect(master); s.start(t, rand(.5)); s.stop(t + dur);
+}
+function tone(type, f0, f1, dur, vol, lfo) {
+  if (!ac) return; const t = ac.currentTime, o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
+  const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + Math.min(.03, dur * .2)); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  let out = o;
+  if (lfo) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 480; o.connect(f); out = f; const l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = vol * .6; l.connect(lg); lg.connect(g.gain); l.start(t); l.stop(t + dur); }
+  out.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
+}
+const sfx = {
+  shot() { noise(.22, 'lowpass', 5200, 320, .95); noise(.05, 'highpass', 2500, 5000, .4); tone('triangle', 170, 42, .14, .8); },
+  dry() { noise(.03, 'highpass', 3000, 6000, .25); },
+  reload() { noise(.05, 'bandpass', 1800, 900, .35, 3); setTimeout(() => noise(.06, 'bandpass', 2600, 1400, .4, 3), 620); setTimeout(() => noise(.05, 'highpass', 2200, 4200, .4), 1050); },
+  hit() { noise(.09, 'lowpass', 1100, 240, .5); },
+  growl(v = .3) { tone('sawtooth', rand(62, 95), rand(36, 50), rand(.6, 1.1), v, rand(14, 24)); },
+  die() { tone('sawtooth', 120, 30, .7, .32, 28); noise(.3, 'lowpass', 700, 120, .35); },
+  hurt() { tone('sine', 95, 38, .3, .9); noise(.16, 'lowpass', 900, 150, .6); },
+  buzz() { noise(.05, 'bandpass', 4200, 3600, .06, 8); },
+  drip() { tone('sine', rand(1500, 2100), rand(700, 900), .09, .05); }
+};
+
+/* ───────────────────────── 操控 ───────────────────────── */
+const input = { mx: 0, my: 0, fire: false, keys: {} };
+let yaw = 0, pitch = 0, useGyro = false, gyroOK = false, gyroYawOff = 0, needCalib = false;
+const ori = { a: 0, b: 0, g: 0, has: false };
+const qDev = new THREE.Quaternion(), qSmooth = new THREE.Quaternion(), qBase = new THREE.Quaternion(), qTmp = new THREE.Quaternion(), qYaw = new THREE.Quaternion();
+const eTmp = new THREE.Euler(), Z = new THREE.Vector3(0, 0, 1), Y = new THREE.Vector3(0, 1, 0), X = new THREE.Vector3(1, 0, 0);
+const qFix = new THREE.Quaternion(-Math.SQRT1_2, 0, 0, Math.SQRT1_2), vTmp = new THREE.Vector3();
+const DEG = Math.PI / 180;
+function onOri(e) { if (e.alpha == null || e.beta == null) return; ori.a = e.alpha * DEG; ori.b = e.beta * DEG; ori.g = e.gamma * DEG; if (!ori.has) { ori.has = true; needCalib = true; } }
+function deviceQuat(out) {
+  const so = ((screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0) * DEG;
+  eTmp.set(ori.b, ori.a, -ori.g, 'YXZ'); out.setFromEuler(eTmp).multiply(qFix).multiply(qTmp.setFromAxisAngle(Z, -so));
+}
+const yawOf = q => { vTmp.set(0, 0, -1).applyQuaternion(q); return Math.atan2(-vTmp.x, -vTmp.z); };
+function calibrate(targetYaw = yaw) { deviceQuat(qDev); gyroYawOff = targetYaw - yawOf(qDev); qSmooth.copy(qYaw.setFromAxisAngle(Y, gyroYawOff).multiply(qDev)); needCalib = false; }
+async function enableGyro() {
+  try {
+    if (typeof DeviceOrientationEvent === 'undefined') return false;
+    if (typeof DeviceOrientationEvent.requestPermission === 'function') {
+      if (await DeviceOrientationEvent.requestPermission() !== 'granted') return false;
+    }
+    addEventListener('deviceorientation', onOri, true); return true;
+  } catch (e) { return false; }
+}
+
+// 觸控：左側搖桿移動、右側拖曳轉向、射擊鈕按住連發（按住時也能拖曳微調）
+const touchEl = $('hud'), tmap = new Map(), stick = $('stick'), knob = $('knob');
+let lookDX = 0, lookDY = 0;
+function tStart(e) {
+  if (state !== 'play') return; e.preventDefault();
+  for (const t of e.changedTouches) {
+    const el = t.target.closest ? t.target.closest('.btn') : null; let type;
+    if (el && el.id === 'reload') { reload(); continue; }
+    if (el && el.id === 'center') { calibrate(yawOf(qSmooth)); pitchNudge(); continue; }
+    if (el && el.id === 'fire') { type = 'fire'; input.fire = true; el.classList.add('act'); }
+    else if (t.clientX < vw * .4 && ![...tmap.values()].some(v => v.type === 'move')) {
+      type = 'move'; stick.style.display = 'block'; stick.style.left = t.clientX + 'px'; stick.style.top = t.clientY + 'px'; knob.style.transform = '';
+    } else type = 'look';
+    tmap.set(t.identifier, { type, sx: t.clientX, sy: t.clientY, x: t.clientX, y: t.clientY });
+  }
+}
+function pitchNudge() { showTip('視角已回正'); }
+function tMove(e) {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    const s = tmap.get(t.identifier); if (!s) continue;
+    if (s.type === 'move') {
+      let dx = t.clientX - s.sx, dy = t.clientY - s.sy; const l = Math.hypot(dx, dy), R = 50;
+      if (l > R) { dx *= R / l; dy *= R / l; }
+      input.mx = dx / R; input.my = dy / R; knob.style.transform = `translate(${dx}px,${dy}px)`;
+    } else { lookDX += t.clientX - s.x; lookDY += t.clientY - s.y; }
+    s.x = t.clientX; s.y = t.clientY;
+  }
+}
+function tEnd(e) {
+  for (const t of e.changedTouches) {
+    const s = tmap.get(t.identifier); if (!s) continue; tmap.delete(t.identifier);
+    if (s.type === 'move') { input.mx = input.my = 0; stick.style.display = 'none'; }
+    if (s.type === 'fire') { input.fire = false; $('fire').classList.remove('act'); }
+  }
+}
+$('hud').style.pointerEvents = 'none';
+const tl = $('touch');
+for (const el of [tl, $('fire'), $('reload'), $('center')]) {
+  el.addEventListener('touchstart', tStart, { passive: false }); el.addEventListener('touchmove', tMove, { passive: false });
+  el.addEventListener('touchend', tEnd); el.addEventListener('touchcancel', tEnd);
+}
+addEventListener('contextmenu', e => e.preventDefault());
+// 桌機：滑鼠 + 鍵盤
+if (!IS_TOUCH) {
+  tl.addEventListener('mousedown', e => { if (state !== 'play') return; if (document.pointerLockElement !== tl) tl.requestPointerLock?.(); if (e.button === 0) input.fire = true; });
+  addEventListener('mouseup', () => input.fire = false);
+  addEventListener('mousemove', e => { if (document.pointerLockElement === tl) { lookDX += e.movementX * .5; lookDY += e.movementY * .5; } });
+  addEventListener('keydown', e => { input.keys[e.code] = true; if (e.code === 'KeyR') reload(); });
+  addEventListener('keyup', e => input.keys[e.code] = false);
+}
+
+/* ───────────────────────── 遊戲狀態 ───────────────────────── */
+let state = 'menu', hp = 100, score = 0, kills = 0, wave = 0, toSpawn = 0, spawnT = 0, waveGap = 0;
+const MAG = 24; let ammo = MAG, reloadT = 0, fireCD = 0, kick = 0, recoilP = 0, shake = 0, damageFx = 0, flashT = 0, heat = 0, bobT = 0, attackGrace = 0;
+const player = camera.position, swayV = new THREE.Vector2();
+const enemies = [], rayTargets = [];
+const ray = new THREE.Raycaster(); ray.far = 45;
+
+function showBanner(t, ms = 2200) { const b = $('banner'); b.textContent = t; b.classList.add('on'); clearTimeout(showBanner.t); showBanner.t = setTimeout(() => b.classList.remove('on'), ms); }
+function showTip(t, ms = 2600) { const b = $('tip'); b.textContent = t; b.classList.add('on'); clearTimeout(showTip.t); showTip.t = setTimeout(() => b.classList.remove('on'), ms); }
+function hud() {
+  $('hpfill').style.width = clamp(hp, 0, 100) + '%'; $('score').textContent = score; $('wave').textContent = `第 ${wave} 波`;
+  const a = $('ammo'); a.firstChild.nodeValue = (reloadT > 0 ? '--' : ammo) + ' '; a.classList.toggle('low', ammo <= 5);
+}
+
+/* ───────────────────────── 怪物 ───────────────────────── */
+const TYPES = {
+  walker: { hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [3.2, .25, .1], lean: .35, score: 100 },
+  runner: { hp: 2.5, speed: 3.3, scale: .86, dmg: 7, skin: 0x6b5a4c, eye: [3, 2.2, .2], lean: .75, score: 150 },
+  brute: { hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [3.4, 1, .1], lean: .25, score: 400 }
+};
+const eGeo = {
+  leg: B(.15, .85, .15).translate(0, -.425, 0), torso: B(.48, .64, .27).translate(0, .32, 0), arm: B(.105, .74, .105).translate(0, -.37, 0),
+  head: new THREE.IcosahedronGeometry(.165, 0), eye: B(.045, .028, .02), jaw: B(.14, .05, .1)
+};
+const SPAWNS = [
+  { sx: 0, sz: -D / 2 - 6, wx: 0, wz: -D / 2 + 1.4 }, { sx: 0, sz: D / 2 + 6, wx: 0, wz: D / 2 - 1.4 },
+  { sx: -W / 2 - 6, sz: 0, wx: -W / 2 + 1.4, wz: 0 }, { sx: W / 2 + 6, sz: 0, wx: W / 2 - 1.4, wz: 0 }
+];
+function spawnEnemy() {
+  const r = Math.random(), tn = wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .42 ? 'runner' : 'walker', T = TYPES[tn];
+  // 優先從玩家看不到/較遠的門湧出
+  const sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s;
+  const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
+  const mat = new THREE.MeshStandardMaterial({ color: T.skin, roughness: .62, flatShading: true });
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
+  const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
+    ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9) };
+  const mk = (geo, parent, x, y, z, head) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.userData.e = e; m.userData.head = !!head; parent.add(m); e.meshes.push(m); return m; };
+  e.legL = mk(eGeo.leg, body, -.13, .85, 0); e.legR = mk(eGeo.leg, body, .13, .85, 0);
+  e.torso = mk(eGeo.torso, body, 0, .83, 0); e.torso.rotation.x = T.lean;
+  e.armL = mk(eGeo.arm, e.torso, -.3, .56, 0); e.armR = mk(eGeo.arm, e.torso, .3, .56, 0);
+  e.head = mk(eGeo.head, e.torso, 0, .78, .04, true); e.head.scale.set(1, 1.15, 1.05); e.head.rotation.x = -T.lean * .8;
+  mk(eGeo.jaw, e.head, 0, -.13, .07, true);
+  for (const sx of [-.06, .06]) { const m = new THREE.Mesh(eGeo.eye, eyeMat); m.position.set(sx, .02, .145); e.head.add(m); }
+  root.scale.setScalar(T.scale); if (tn === 'brute') { e.torso.scale.set(1.25, 1, 1.3); } if (tn === 'runner') { e.torso.scale.set(.85, 1, .85); }
+  root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
+  if (Math.random() < .5) sfx.growl(.22);
+}
+function killEnemy(e, headshot, dir) {
+  e.dead = true; e.deadT = 0; e.eyeMat.color.multiplyScalar(.12);
+  for (const m of e.meshes) { const i = rayTargets.indexOf(m); if (i >= 0) rayTargets.splice(i, 1); }
+  e.kx = dir.x * 2.2; e.kz = dir.z * 2.2;
+  score += e.T.score + (headshot ? 50 : 0); kills++; sfx.die();
+  const p = pools[poolI++ % pools.length]; p.visible = true; p.position.set(e.x + dir.x * .9, .012 + (poolI % 12) * .0006, e.z + dir.z * .9); p.scale.setScalar(.15); p.userData.g = rand(.7, 1.25) * e.T.scale; p.rotation.y = rand(6);
+  hud();
+}
+function removeEnemy(e) { scene.remove(e.root); e.mat.dispose(); e.eyeMat.dispose(); enemies.splice(enemies.indexOf(e), 1); }
+
+function updateEnemies(dt, t) {
+  let alive = 0;
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (e.flash > 0) { e.flash = Math.max(0, e.flash - dt * 6); e.mat.emissive.setRGB(e.flash * .22, e.flash * .03, e.flash * .02); }
+    if (e.dead) {
+      e.deadT += dt; const k = Math.min(1, e.deadT / .5);
+      e.body.rotation.x = -k * k * Math.PI / 2; e.body.position.y = k * .14;
+      e.x += e.kx * dt; e.z += e.kz * dt; e.kx *= Math.exp(-dt * 5); e.kz *= Math.exp(-dt * 5);
+      if (e.deadT > 5) e.root.position.y -= dt * .25;
+      e.root.position.x = e.x; e.root.position.z = e.z;
+      if (e.deadT > 7.5) removeEnemy(e);
+      continue;
+    }
+    alive++;
+    const tx = e.mode === 'enter' ? e.way.wx : player.x, tz = e.mode === 'enter' ? e.way.wz : player.z;
+    let dx = tx - e.x, dz = tz - e.z; const dist = Math.hypot(dx, dz) || 1e-3; dx /= dist; dz /= dist;
+    if (e.mode === 'enter' && dist < .8) e.mode = 'chase';
+    const range = 1.15 + e.T.scale * .25, inRange = e.mode === 'chase' && dist < range;
+    let vx = dx, vz = dz;
+    if (e.mode === 'chase') {
+      for (const o of obstacles) {
+        const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz), R = o.r + 1;
+        if (d < R) { const ax = ox / d, az = oz / d; let tx2 = -az, tz2 = ax; if (tx2 * dx + tz2 * dz < 0) { tx2 = -tx2; tz2 = -tz2; } const k = (R - d) / R * 2.2; vx += (ax * .9 + tx2 * 1.3) * k; vz += (az * .9 + tz2 * 1.3) * k; }
+      }
+      for (const o of enemies) {
+        if (o === e || o.dead) continue; const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz);
+        if (d < .9 && d > 1e-3) { vx += ox / d * (.9 - d) * 2.5; vz += oz / d * (.9 - d) * 2.5; }
+      }
+      const l = Math.hypot(vx, vz) || 1; vx /= l; vz /= l;
+    }
+    e.stun = Math.max(0, e.stun - dt);
+    const sp = inRange ? 0 : e.speed * (e.stun > 0 ? .15 : 1);
+    e.x += (vx * sp + e.kx) * dt; e.z += (vz * sp + e.kz) * dt; e.kx *= Math.exp(-dt * 9); e.kz *= Math.exp(-dt * 9);
+    if (e.mode === 'chase') {
+      e.x = clamp(e.x, -W / 2 + .4, W / 2 - .4); e.z = clamp(e.z, -D / 2 + .4, D / 2 - .4);
+      for (const o of obstacles) { const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz), R = o.r + .32; if (d < R && d > 1e-3) { e.x = o.x + ox / d * R; e.z = o.z + oz / d * R; } }
+    }
+    // 朝向與動作
+    let dr = Math.atan2(dx, dz) - e.rot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); e.rot += dr * Math.min(1, dt * 7);
+    e.root.position.set(e.x, 0, e.z); e.root.rotation.y = e.rot;
+    e.ph += dt * sp * 3.4 / e.T.scale; const s = Math.sin(e.ph);
+    e.legL.rotation.x = s * .65; e.legR.rotation.x = -s * .65;
+    e.body.position.y = Math.abs(Math.cos(e.ph)) * .04; e.torso.rotation.z = s * .07; e.head.rotation.z = Math.sin(t * 2.3 + e.ph) * .12;
+    let reach = -1.25 + e.T.lean * .3;
+    if (inRange) {
+      e.atk += dt;
+      if (e.atk > 0) reach -= Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .9;
+      if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg); }
+    } else e.atk = Math.min(e.atk, -.15);
+    e.armL.rotation.x = reach + s * .18; e.armR.rotation.x = reach - s * .18;
+    e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
+  }
+  return alive;
+}
+function hurtPlayer(d) {
+  if (state !== 'play') return;
+  hp -= d; damageFx = 1; shake = Math.max(shake, .05); sfx.hurt(); navigator.vibrate?.(60); hud();
+  if (hp <= 0) gameOver();
+}
+
+/* ───────────────────────── 射擊 ───────────────────────── */
+const vDir = new THREE.Vector3(), vPos = new THREE.Vector3(), vN = new THREE.Vector3(), vMz = new THREE.Vector3();
+function reload() { if (state !== 'play' || reloadT > 0 || ammo === MAG) return; reloadT = 1.35; sfx.reload(); hud(); }
+function fire() {
+  if (ammo <= 0) { sfx.dry(); fireCD = .25; reload(); return; }
+  ammo--; fireCD = .135; kick = 1; recoilP += .016 + heat * .006; shake = Math.max(shake, .012); heat = Math.min(1, heat + .22);
+  flashT = .05; flash.visible = true; flash.rotation.z = rand(6.28); flash.scale.setScalar(rand(.75, 1.25)); muzzleLight.intensity = 30;
+  sfx.shot(); navigator.vibrate?.(12);
+  camera.updateMatrixWorld(); muzzle.getWorldPosition(vMz); camera.getWorldDirection(vDir);
+  const sprd = .004 + heat * .018; vDir.x += rand(-sprd, sprd); vDir.y += rand(-sprd, sprd); vDir.z += rand(-sprd, sprd); vDir.normalize();
+  for (let i = 0; i < 14; i++) { const s = rand(4, 16); sparks.emit(vMz.x, vMz.y, vMz.z, vDir.x * s + rand(-2.4, 2.4), vDir.y * s + rand(-2.4, 2.4), vDir.z * s + rand(-2.4, 2.4), rand(.05, .22), rand(.012, .035), 4, rand(1.2, 2.4), .5, 5); }
+  smoke.emit(vMz.x + vDir.x * .1, vMz.y, vMz.z + vDir.z * .1, vDir.x * .6 + rand(-.1, .1), rand(.15, .4), vDir.z * .6 + rand(-.1, .1), rand(.5, .9), rand(.12, .2), .09, .09, .09, -.2);
+  ray.set(camera.getWorldPosition(vPos), vDir);
+  const hits = ray.intersectObjects(rayTargets, false).concat(ray.intersectObjects(solids, false)).sort((a, b) => a.distance - b.distance);
+  const h = hits[0]; if (!h) { hud(); return; }
+  const p = h.point, e = h.object.userData.e;
+  if (e && !e.dead) {
+    const head = h.object.userData.head; e.hp -= head ? 2.6 : 1; e.flash = 1; e.stun = .16;
+    const kb = (head ? 2.6 : 1.8) / e.T.scale; e.kx += vDir.x * kb; e.kz += vDir.z * kb;
+    for (let i = 0; i < (head ? 26 : 14); i++) blood.emit(p.x, p.y, p.z, -vDir.x * rand(0, 2.5) + rand(-1.6, 1.6), rand(-.5, 3), -vDir.z * rand(0, 2.5) + rand(-1.6, 1.6), rand(.5, 1.6), rand(.02, .05), rand(.04, .08), .002, .002, 9.8);
+    for (let i = 0; i < 5; i++) blood.emit(p.x, p.y, p.z, vDir.x * rand(2, 5) + rand(-.6, .6), rand(0, 1.6), vDir.z * rand(2, 5) + rand(-.6, .6), rand(.6, 1.4), rand(.02, .045), .06, .002, .002, 9.8);
+    sfx.hit(); const hm = $('hit'); hm.classList.toggle('head', head); hm.style.transition = 'none'; hm.style.opacity = 1; void hm.offsetWidth; hm.style.transition = 'opacity .25s'; hm.style.opacity = 0;
+    if (e.hp <= 0) killEnemy(e, head, vDir);
+  } else if (!e) {
+    vN.copy(h.face.normal).transformDirection(h.object.matrixWorld);
+    const hole = holes[holeI++ % holes.length]; hole.visible = true; hole.position.copy(p).addScaledVector(vN, .006); hole.lookAt(vPos.copy(p).add(vN)); hole.scale.setScalar(rand(.7, 1.3));
+    for (let i = 0; i < 9; i++) sparks.emit(p.x, p.y, p.z, vN.x * rand(1, 4) + rand(-2, 2), vN.y * rand(1, 4) + rand(-1, 3), vN.z * rand(1, 4) + rand(-2, 2), rand(.1, .35), rand(.01, .025), 3, 1.6, .5, 9.8);
+    for (let i = 0; i < 3; i++) smoke.emit(p.x, p.y, p.z, vN.x * rand(.3, .9) + rand(-.2, .2), rand(.1, .5), vN.z * rand(.3, .9) + rand(-.2, .2), rand(.4, .9), rand(.08, .16), .11, .11, .1, -.1);
+  }
+  hud();
+}
+
+/* ───────────────────────── 流程 ───────────────────────── */
+function startWave(n) { wave = n; toSpawn = Math.min(42, 4 + n * 2); spawnT = 2.2; showBanner(`第 ${n} 波`); hud(); }
+function resetGame() {
+  while (enemies.length) removeEnemy(enemies[0]); rayTargets.length = 0;
+  pools.forEach(p => p.visible = false); holes.forEach(h => h.visible = false);
+  hp = 100; score = 0; kills = 0; ammo = MAG; reloadT = 0; damageFx = 0; heat = 0; waveGap = 0; attackGrace = 0;
+  player.set(0, EYE, 5); yaw = 0; pitch = 0; lookDX = lookDY = 0; input.fire = false; input.mx = input.my = 0; tmap.clear(); stick.style.display = 'none';
+  if (useGyro && ori.has) calibrate(0);
+  startWave(1);
+}
+async function begin(wantGyro) {
+  initAudio();
+  if (IS_TOUCH) {
+    useGyro = false;
+    if (wantGyro) { gyroOK = gyroOK || await enableGyro(); useGyro = gyroOK; }
+    try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); await screen.orientation?.lock?.('landscape'); } catch (e) { }
+  } else tl.requestPointerLock?.();
+  document.body.classList.toggle('gyro', useGyro);
+  $('menu').classList.add('hide'); $('over').classList.add('hide'); $('hud').classList.add('on');
+  state = 'play'; resetGame();
+  if (wantGyro && IS_TOUCH) {
+    if (!useGyro) showTip('無法取得陀螺儀權限，已改用觸控瞄準', 4000);
+    else setTimeout(() => { if (!ori.has && state === 'play') { useGyro = false; document.body.classList.remove('gyro'); showTip('此裝置沒有陀螺儀訊號，已改用觸控瞄準', 4000); } }, 1500);
+  }
+}
+function gameOver() {
+  state = 'dead'; input.fire = false; document.exitPointerLock?.();
+  $('final').innerHTML = `撐到第 ${wave} 波 · 擊殺 ${kills}<br>得分 ${score}`;
+  setTimeout(() => { $('over').classList.remove('hide'); $('hud').classList.remove('on'); }, 900);
+}
+$('bGyro').onclick = () => begin(true); $('bTouch').onclick = () => begin(false);
+$('bAgain').onclick = () => begin(useGyro || (IS_TOUCH && gyroOK));
+
+/* ───────────────────────── 主迴圈 ───────────────────────── */
+const clock = new THREE.Clock(); let fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0;
+function updatePlayer(dt) {
+  // 視角
+  const sens = IS_TOUCH ? .0042 : .0044;
+  if (useGyro && ori.has) {
+    if (needCalib) calibrate(yaw);
+    gyroYawOff -= lookDX * sens;
+    deviceQuat(qDev); qTmp.copy(qYaw.setFromAxisAngle(Y, gyroYawOff)).multiply(qDev);
+    qSmooth.slerp(qTmp, 1 - Math.exp(-dt * 16)); qBase.copy(qSmooth); yaw = yawOf(qBase);
+  } else {
+    yaw -= lookDX * sens; pitch = clamp(pitch - lookDY * sens, -1.35, 1.35);
+    qBase.setFromEuler(eTmp.set(pitch, yaw, 0, 'YXZ'));
+  }
+  swayV.x += (clamp(lookDX * .0006, -.03, .03) - swayV.x) * Math.min(1, dt * 10); swayV.y += (clamp(lookDY * .0006, -.03, .03) - swayV.y) * Math.min(1, dt * 10);
+  lookDX = lookDY = 0;
+  // 移動
+  let mx = input.mx, my = input.my; const K = input.keys;
+  if (K.KeyW || K.ArrowUp) my -= 1; if (K.KeyS || K.ArrowDown) my += 1; if (K.KeyA || K.ArrowLeft) mx -= 1; if (K.KeyD || K.ArrowRight) mx += 1;
+  const ml = Math.hypot(mx, my); if (ml > 1) { mx /= ml; my /= ml; }
+  const sn = Math.sin(yaw), cs = Math.cos(yaw), SPEED = 3.3;
+  player.x += (mx * cs + my * sn) * SPEED * dt; player.z += (-mx * sn + my * cs) * SPEED * dt;
+  player.x = clamp(player.x, -W / 2 + .4, W / 2 - .4); player.z = clamp(player.z, -D / 2 + .4, D / 2 - .4);
+  for (const o of obstacles) { const ox = player.x - o.x, oz = player.z - o.z, d = Math.hypot(ox, oz), R = o.r + .34; if (d < R && d > 1e-4) { player.x = o.x + ox / d * R; player.z = o.z + oz / d * R; } }
+  const mv = Math.min(1, ml); bobT += dt * mv * 9.5;
+  player.y = EYE + Math.sin(bobT) * .028 * mv;
+  // 射擊與換彈
+  fireCD -= dt; heat = Math.max(0, heat - dt * 1.4);
+  if (reloadT > 0) { reloadT -= dt; if (reloadT <= 0) { ammo = MAG; hud(); } }
+  else if (input.fire && fireCD <= 0) fire();
+  kick *= Math.exp(-dt * 13); recoilP *= Math.exp(-dt * 9); shake *= Math.exp(-dt * 8);
+  const rp = reloadT > 0 ? Math.sin((1 - reloadT / 1.35) * Math.PI) : 0;
+  gun.position.set(GUN_BASE.x - swayV.x + Math.cos(bobT * .5) * .006 * mv, GUN_BASE.y + swayV.y + Math.sin(bobT) * .006 * mv - rp * .16 + kick * .008, GUN_BASE.z + kick * .055);
+  gun.rotation.set(kick * .16 - rp * .5, swayV.x * 1.5, rp * .7);
+  slide.position.z = Math.min(1, kick * 1.6) * .04;
+}
+function frame() {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
+
+  // 掛燈：鐘擺晃動 + 接觸不良閃爍
+  for (const l of lamps) {
+    l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7;
+    if (l.off > 0) { l.off -= dt; if (l.off <= 0 && l.burst > 0) { l.burst--; l.off = -rand(.03, .12); } }
+    else if (l.off < 0) { l.off += dt; if (l.off >= 0) l.off = rand(.03, .14); }
+    else if (Math.random() < l.glitch * dt) { l.off = rand(.04, .2); l.burst = Math.random() < .5 ? (rand(1, 4) | 0) : 0; if (ac && state === 'play') sfx.buzz(); }
+    const target = l.off > 0 ? rand(.02, .12) : .86 + .1 * Math.sin(t * 37 + l.ph) * Math.sin(t * 5.3 + l.ph) + rand(.04);
+    l.k += (target - l.k) * Math.min(1, dt * 45);
+    l.light.intensity = l.base * l.k; l.bulbMat.color.copy(l.color).multiplyScalar(.4 + l.k * 5.5);
+  }
+  const ba = t * 2.6; beacon.target.position.set(beacon.position.x + Math.sin(ba) * 4, beacon.position.y - 2.2, beacon.position.z + Math.cos(ba) * 4 + 1.5);
+  const bk = .5 + .5 * Math.sin(t * 3.1); redPulse.intensity = 1 + bk * bk * 7; beaconMat.color.setRGB(1 + bk * 5, .12, .05);
+
+  if (state === 'play') {
+    updatePlayer(dt);
+    attackGrace = Math.max(0, attackGrace - dt);
+    const alive = updateEnemies(dt, t);
+    if (toSpawn > 0) { spawnT -= dt; if (spawnT <= 0 && alive < Math.min(12, 4 + wave)) { spawnEnemy(); toSpawn--; spawnT = Math.max(.55, 2.3 - wave * .16) * rand(.7, 1.3); } }
+    else if (alive === 0 && waveGap <= 0) { waveGap = 4; hp = Math.min(100, hp + 20); showBanner('暫時安靜了…'); hud(); }
+    if (waveGap > 0) { waveGap -= dt; if (waveGap <= 0) startWave(wave + 1); }
+    deathTilt = 0;
+  } else {
+    updateEnemies(dt, t);
+    if (state === 'dead') { deathTilt = Math.min(1, deathTilt + dt * 1.4); player.y = EYE - deathTilt * 1.2; }
+    else { yaw = Math.sin(t * .12) * .5; qBase.setFromEuler(eTmp.set(-.02, yaw, 0, 'YXZ')); gun.position.copy(GUN_BASE); }
+    kick *= Math.exp(-dt * 13);
+  }
+  camera.quaternion.copy(qBase).multiply(qTmp.setFromAxisAngle(X, recoilP + rand(-1, 1) * shake)).multiply(qTmp.setFromAxisAngle(Z, rand(-1, 1) * shake * .6 + deathTilt * .9));
+
+  if (flashT > 0) { flashT -= dt; if (flashT <= 0) flash.visible = false; }
+  muzzleLight.intensity *= Math.exp(-dt * 28);
+  sparks.update(dt); blood.update(dt); smoke.update(dt);
+  for (const p of pools) if (p.visible && p.scale.x < p.userData.g) p.scale.setScalar(Math.min(p.userData.g, p.scale.x + dt * .35));
+  damageFx = Math.max(0, damageFx - dt * 1.3);
+  finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < 30 ? .3 + .15 * Math.sin(t * 5) : 0);
+  finalPass.uniforms.uTime.value = t;
+  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2.5, 8); sfx.drip(); } }
+
+  composer.render(dt);
+
+  // 動態解析度：維持流暢
+  fpsAcc += dt; fpsN++;
+  if (fpsAcc > 2) {
+    const fps = fpsN / fpsAcc; fpsAcc = fpsN = 0;
+    if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); resize(); if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
+    else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); resize(); }
+  }
+}
+document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
+qBase.identity();
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer };
+frame();
+</script>
+</body>
+</html>
