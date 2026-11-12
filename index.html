@@ -96,6 +96,7 @@
   #cJoin p{font-size:14px;line-height:1.9;opacity:.65;margin:14px 0 22px}
   #cMsg{margin-top:16px;font-size:13px;color:#ffb3a6;min-height:1.4em}
   #cPad{flex:1;display:none;flex-direction:column;min-height:0}
+  #cNet{font-size:10px;padding:2px 6px;border:1px solid rgba(216,210,196,.35);border-radius:3px;opacity:.7;letter-spacing:.05em}
   #cTop{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:14px;letter-spacing:.12em}
   #cA{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
   #cHp{flex:1;height:8px;border:1px solid rgba(216,210,196,.45)}#cHp i{display:block;height:100%;width:100%;background:#b93a2c}
@@ -186,6 +187,40 @@
   window.addEventListener('error', e => { document.getElementById('err').textContent = '載入錯誤：' + (e.message || '資源無法載入，請確認網路連線'); });
 </script>
 <script>
+/* ───────── 中繼線路：精簡的 MQTT over WebSocket 用戶端（主機與遙控器共用） ─────────
+   兩台裝置各自連到公用中繼站，不需要互相直連，所以行動網路、不同 Wi-Fi 都能通。 */
+window.B2 = {
+  RELAYS: ['wss://broker.emqx.io:8084/mqtt', 'wss://broker.hivemq.com:8884/mqtt', 'wss://test.mosquitto.org:8081/'],
+  relay(url, sub, onMsg, onUp) {
+    let ws, ping, closed = false, buf = new Uint8Array(0);
+    const enc = new TextEncoder(), dec = new TextDecoder();
+    const str = t => { const b = enc.encode(t); return [b.length >> 8, b.length & 255, ...b]; };
+    const pkt = (h, body) => {
+      if (!ws || ws.readyState !== 1) return; const l = []; let n = body.length;
+      do { let d = n % 128; n = n >> 7; if (n) d |= 128; l.push(d); } while (n);
+      ws.send(new Uint8Array([h, ...l, ...body]));
+    };
+    function open() {
+      try { ws = new WebSocket(url, 'mqtt'); } catch (e) { return; }
+      ws.binaryType = 'arraybuffer'; buf = new Uint8Array(0);
+      ws.onopen = () => pkt(0x10, [...str('MQTT'), 4, 2, 0, 30, ...str('b2' + Math.random().toString(36).slice(2, 12))]);
+      ws.onmessage = e => {
+        const a = new Uint8Array(e.data), nb = new Uint8Array(buf.length + a.length); nb.set(buf); nb.set(a, buf.length); buf = nb;
+        for (;;) {
+          if (buf.length < 2) break; let i = 1, len = 0, m = 1, d;
+          do { if (i >= buf.length) return; d = buf[i++]; len += (d & 127) * m; m *= 128; } while (d & 128);
+          if (buf.length < i + len) break;
+          const t = buf[0] >> 4, body = buf.slice(i, i + len); buf = buf.slice(i + len);
+          if (t === 2) { if (body[1] === 0) { pkt(0x82, [0, 1, ...str(sub), 0]); clearInterval(ping); ping = setInterval(() => pkt(0xC0, []), 20000); if (onUp) onUp(); } }
+          else if (t === 3) { const tl = body[0] << 8 | body[1]; onMsg(dec.decode(body.subarray(2 + tl))); }
+        }
+      };
+      ws.onclose = () => { clearInterval(ping); if (!closed) setTimeout(open, 2000); }; ws.onerror = () => { };
+    }
+    open();
+    return { pub(t, m) { pkt(0x30, [...str(t), ...enc.encode(m)]); }, close() { closed = true; try { ws.close(); } catch (e) { } } };
+  }
+};
 /* ───────── 手機遙控器頁面（網址帶 ?c=主機代碼 時啟用） ───────── */
 (function () {
   const hostId = new URLSearchParams(location.search).get('c'); if (!hostId) return;
@@ -196,7 +231,7 @@
       <p>直握手機，像拿電視遙控器一樣<br>把手機頂端指向螢幕，轉動手機就能瞄準</p>
       <button id="cGo">連線並啟用陀螺儀</button><div id="cMsg"></div></div>
     <div id="cPad">
-      <div id="cTop"><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
+      <div id="cTop"><span id="cNet"></span><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
       <div id="cSwipe"><button id="cStart">開始遊戲</button><div id="cPerks"></div><span>在這裡滑動可轉身</span></div>
       <div id="cRow"><div class="cb" data-k="ads">開鏡</div><div class="cb" data-k="reload">換彈</div><div class="cb" data-k="next">換槍</div><div class="cb" data-k="center">回正</div></div>
       <div id="cBottom"><div id="cStick"><div id="cKnob"></div></div><div id="cFire">射擊</div></div>
@@ -213,13 +248,23 @@
     last = e.alpha; beta = e.beta;
   }
   function center() { a0 = acc; b0 = beta; dragY = dragP = 0; st.c++; }
-  function tick() {
-    st.y = (acc - a0) * DEG * SENS + dragY; st.p = (beta - b0) * DEG * SENS + dragP;
-    if (conn && conn.open) conn.send(Object.assign({ t: 's' }, st));
+  const qs = new URLSearchParams(location.search), topC = 'b2g/' + hostId + '/c', topH = 'b2g/' + hostId + '/h';
+  let relay = null, linked = false, heard = 0, p2pHeard = 0, nTick = 0;
+  const p2p = () => conn && conn.open && Date.now() - p2pHeard < 4000;
+  const send = d => { if (p2p()) conn.send(d); else if (relay) relay.pub(topC, JSON.stringify(d)); };
+  function tick() {     // 直連每秒約 30 次；走中繼時減半，避免被公用中繼站限速
+    st.y = (acc - a0) * DEG * SENS + dragY; st.p = (beta - b0) * DEG * SENS + dragP; nTick++;
+    const d = Object.assign({ t: 's' }, st);
+    if (p2p()) conn.send(d); else if (relay && nTick % 2 === 0) relay.pub(topC, JSON.stringify(d));
   }
-  const send = d => { if (conn && conn.open) conn.send(d); };
+  function showPad(on) { $('#cJoin').style.display = on ? 'none' : 'flex'; $('#cPad').style.display = on ? 'flex' : 'none'; }
+  function link() {
+    heard = Date.now(); $('#cNet').textContent = p2p() ? '直連' : '中繼';
+    if (linked) return; linked = true; showPad(true); center(); clearInterval(timer); timer = setInterval(tick, 33);
+    try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => { }); } catch (e) { }
+  }
   function onData(d) {
-    if (!d) return;
+    if (!d) return; link();
     if (d.t === 'v') { if (navigator.vibrate) navigator.vibrate(d.ms); }
     else if (d.t === 'h') {
       $('#cW').textContent = d.w; $('#cA').textContent = (d.r ? '換彈中' : d.a + ' / ' + d.m); $('#cHp i').style.width = d.hp + '%';
@@ -230,28 +275,32 @@
       }
     }
   }
+  setInterval(() => { if (linked && Date.now() - heard > 5000) { linked = false; clearInterval(timer); showPad(false); msg('與電腦失去連線，正在重新連線…（電腦上的 QR Code 畫面若已關閉，請重新掃描）'); } }, 1000);
   const load = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); });
-  function showPad(on) { $('#cJoin').style.display = on ? 'none' : 'flex'; $('#cPad').style.display = on ? 'flex' : 'none'; }
+  let started = false;
   $('#cGo').onclick = async () => {
-    msg('連線中…');
+    msg('啟用陀螺儀…');
     try {
-      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        if (await DeviceOrientationEvent.requestPermission() !== 'granted') msg('未取得陀螺儀權限，仍可用滑動轉向');
-      }
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') await DeviceOrientationEvent.requestPermission();
     } catch (e) { }
     addEventListener('deviceorientation', onOri, true);
-    try { if (!window.Peer) await load('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js'); } catch (e) { msg('無法載入連線元件，請檢查網路'); return; }
-    const peer = new Peer();
-    peer.on('open', () => {
-      conn = peer.connect(hostId, { serialization: 'json' });
-      conn.on('open', () => {
-        showPad(true); center(); clearInterval(timer); timer = setInterval(tick, 33);
-        try { navigator.wakeLock && navigator.wakeLock.request('screen').catch(() => { }); } catch (e) { }
+    if (started) return; started = true; $('#cGo').style.display = 'none';
+    msg('連線中…');
+    // 線路一：中繼（任何網路都能通）
+    const rurl = qs.get('relay') || B2.RELAYS[qs.get('r')];
+    if (rurl) {
+      let hi; relay = B2.relay(rurl, topH, m => { try { onData(JSON.parse(m)); } catch (e) { } }, () => {
+        if (!linked) msg('已連上中繼站，等待電腦回應…');
+        clearInterval(hi); const hello = () => { if (!linked) relay.pub(topC, '{"t":"hi"}'); }; hi = setInterval(hello, 500); hello();
       });
-      conn.on('data', onData);
-      conn.on('close', () => { clearInterval(timer); showPad(false); msg('連線中斷，請重新掃描電腦上的 QR Code'); });
-    });
-    peer.on('error', e => msg('連線失敗（' + e.type + '）— 請確認電腦上的 QR Code 畫面還開著，再重新掃描'));
+    }
+    // 線路二：直連（同一個 Wi-Fi 時延遲最低；連上後自動改用）
+    load('https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js').then(() => {
+      const peer = new Peer();
+      peer.on('open', () => { const c = peer.connect(hostId, { serialization: 'json' }); c.on('open', () => { conn = c; p2pHeard = Date.now(); link(); }); c.on('data', d => { p2pHeard = Date.now(); onData(d); }); c.on('close', () => { if (conn === c) conn = null; }); });
+      peer.on('error', () => { });
+    }).catch(() => { });
+    setTimeout(() => { if (!linked) msg('連不上電腦。請確認：① 電腦上的 QR Code 畫面還開著、沒有重新整理 ② 手機和電腦都能上網。然後重新掃描 QR Code。'); }, 15000);
   };
   const on = (sel, f) => { const e = $(sel); for (const ev of ['touchstart', 'touchmove', 'touchend', 'touchcancel']) e.addEventListener(ev, x => { x.preventDefault(); f(x, ev, e); }, { passive: false }); };
   on('#cFire', (x, ev, e) => { st.f = x.targetTouches.length ? 1 : 0; e.classList.toggle('act', !!st.f); });
@@ -1291,7 +1340,7 @@ function resetGame() {
 let lastMode = false;
 // mode：true＝手機陀螺儀、false＝觸控/滑鼠、'remote'＝手機當遙控器
 async function begin(mode) {
-  initAudio(); lastMode = mode; remote.on = mode === 'remote' && !!remote.conn;
+  initAudio(); lastMode = mode; remote.on = mode === 'remote' && remoteLive();
   if (remote.on) useGyro = false;
   else if (IS_TOUCH) {
     useGyro = false;
@@ -1314,16 +1363,28 @@ function gameOver(timeUp) {
   setTimeout(() => { $('over').classList.remove('hide'); $('hud').classList.remove('on'); }, 900);
 }
 $('bGyro').onclick = () => begin(true); $('bTouch').onclick = () => begin(false);
-$('bAgain').onclick = () => begin(lastMode === 'remote' && !remote.conn ? false : lastMode);
+$('bAgain').onclick = () => begin(lastMode === 'remote' && !remoteLive() ? false : lastMode);
 $('bMenu').onclick = () => { $('over').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; player.set(0, EYE, 5); deathTilt = 0; setDark(false); };
 
-/* ───────────────────────── 手機遙控器（QR Code 配對，WebRTC 連線） ───────────────────────── */
-const remote = { on: false, conn: null, y: 0, p: 0, ly: 0, lp: 0, ty: 0, tp: 0, c: 0, sendT: 0 };
+/* ───────────────────────── 手機遙控器（QR Code 配對；中繼 + 直連雙線路） ───────────────────────── */
+const remote = { on: false, live: false, conn: null, relay: null, heardAt: -1e9, p2pAt: -1e9, id: '', y: 0, p: 0, ly: 0, lp: 0, ty: 0, tp: 0, c: 0, sendT: 0 };
 const CDN_PEER = 'https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js', CDN_QR = 'https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';
 const loadScript = src => new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = () => rej(new Error('load')); document.head.appendChild(s); });
 const setPair = t => $('pairMsg').textContent = t;
-function remoteSend(d) { const c = remote.conn; if (c && c.open) try { c.send(d); } catch (e) { } }
-function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, r: reloadT > 0 ? 1 : 0, pk: state === 'perk' ? perkOpts.map(p => [p.n, p.d]) : 0 }); }
+// 以「最近 3.5 秒內有收到遙控器訊息」判斷連線是否還活著（手機突然關閉時，直連通道不一定會通知）
+const p2pOpen = () => !!(remote.conn && remote.conn.open) && performance.now() - remote.p2pAt < 3500;
+const remoteLive = () => performance.now() - remote.heardAt < 3500;
+function remoteSend(d) { try { if (p2pOpen()) remote.conn.send(d); else if (remote.relay) remote.relay.pub('b2g/' + remote.id + '/h', JSON.stringify(d)); } catch (e) { } }
+function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp / perk.maxHp * 100)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, r: reloadT > 0 ? 1 : 0, pk: state === 'perk' ? perkOpts.map(p => [p.n, p.d]) : 0 }); }
+function remoteUp() {
+  setPair('✓ 遙控器已連線（' + (p2pOpen() ? '直連' : '中繼') + '）— 在手機上按「開始遊戲」');
+  if (!remote.live) { remote.live = true; remote.sendT = 0; if (lastMode === 'remote' && state !== 'menu') { remote.on = true; document.body.classList.add('remote'); } }   // 斷線後回來可直接接手
+  remoteStatus();
+}
+function remoteLost() {
+  remote.live = remote.on = false; document.body.classList.remove('remote'); input.fire = input.ads = false; input.mx = input.my = 0;
+  setPair('遙控器已斷線，請重新掃描 QR Code'); if (state === 'play') showTip('遙控器已斷線，可改用鍵盤滑鼠', 5000);
+}
 function onRemote(d) {
   if (!d || typeof d !== 'object') return;
   if (d.t === 's') {
@@ -1336,31 +1397,48 @@ function onRemote(d) {
     else if (remote.on && state === 'play') { if (d.k === 'reload') reload(); else if (d.k === 'next') switchWeapon(1); }
   }
 }
-let peer = null;
+function tryRelay(url) {
+  return new Promise(res => {
+    let done = false;
+    const r = B2.relay(url, 'b2g/' + remote.id + '/c', m => {
+      let d; try { d = JSON.parse(m); } catch (e) { return; }
+      remote.heardAt = performance.now(); if (!remote.live || d.t === 'hi') remoteUp();
+      onRemote(d);
+    }, () => { if (!done) { done = true; res(r); } });
+    setTimeout(() => { if (!done) { done = true; r.close(); res(null); } }, 5000);
+  });
+}
+let pairing = false;
 async function openPair() {
   initAudio(); $('menu').classList.add('hide'); $('pair').classList.remove('hide');
-  if (peer) return;
+  if (pairing) return; pairing = true;
   setPair('正在建立連線…');
-  try { await Promise.all([loadScript(CDN_PEER), loadScript(CDN_QR)]); } catch (e) { setPair('無法載入連線元件，請檢查網路後重新整理'); return; }
-  const id = 'b2' + Math.random().toString(36).slice(2, 10); peer = new Peer(id);
-  peer.on('open', () => {
-    const url = location.origin + location.pathname + '?c=' + id, q = qrcode(0, 'M'); q.addData(url); q.make();
-    $('qr').innerHTML = q.createImgTag(6, 14); $('pairUrl').textContent = url;
-    setPair(location.protocol === 'https:' ? '用手機相機掃描 QR Code' : '⚠ 這個頁面不是 HTTPS 網址，手機無法連線或使用陀螺儀');
+  const custom = new URLSearchParams(location.search).get('relay'), list = custom ? [custom] : B2.RELAYS;
+  const id = remote.id = 'b2' + Math.random().toString(36).slice(2, 10);
+  const qrReady = loadScript(CDN_QR).catch(() => null);
+  // 線路一：中繼站（同時嘗試，先連上的就用它）
+  const relayReady = new Promise(res => {
+    let left = list.length, won = false;
+    list.forEach((u, i) => tryRelay(u).then(r => { if (r && !won) { won = true; remote.relay = r; res(i); } else if (r) r.close(); if (--left === 0 && !won) res(-1); }));
   });
-  peer.on('connection', c => {
-    if (remote.conn) try { remote.conn.close(); } catch (e) { }
-    remote.conn = c;
-    c.on('open', () => { setPair('✓ 遙控器已連線 — 在手機上按「開始遊戲」'); remoteStatus(); });
-    c.on('data', onRemote);
-    c.on('close', () => {
-      if (remote.conn !== c) return;
-      remote.conn = null; remote.on = false; document.body.classList.remove('remote'); input.fire = input.ads = false; input.mx = input.my = 0;
-      setPair('遙控器已斷線，請重新掃描 QR Code'); if (state === 'play') showTip('遙控器已斷線，可改用鍵盤滑鼠', 5000);
+  // 線路二：WebRTC 直連
+  const peerReady = loadScript(CDN_PEER).then(() => new Promise(res => {
+    const peer = new Peer(id), to = setTimeout(() => res(false), 8000);
+    peer.on('open', () => { clearTimeout(to); res(true); });
+    peer.on('connection', c => {
+      c.on('open', () => { if (remote.conn && remote.conn !== c) try { remote.conn.close(); } catch (e) { } remote.conn = c; remote.heardAt = remote.p2pAt = performance.now(); remoteUp(); });
+      c.on('data', d => { if (remote.conn !== c) return; remote.heardAt = remote.p2pAt = performance.now(); if (!remote.live) remoteUp(); onRemote(d); });
+      c.on('close', () => { if (remote.conn === c) remote.conn = null; });
     });
-  });
-  peer.on('error', e => { if (e.type !== 'peer-unavailable') setPair('連線錯誤（' + e.type + '），請重新整理頁面'); });
-  peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { } });
+    peer.on('error', e => { if (e.type !== 'peer-unavailable') res(false); });
+    peer.on('disconnected', () => { try { peer.reconnect(); } catch (e) { } });
+  })).catch(() => false);
+  const ri = await relayReady, ok = ri >= 0 || await peerReady; await qrReady;
+  if (!ok) { setPair('無法建立連線，請檢查網路後重新整理頁面'); pairing = false; return; }
+  const url = location.origin + location.pathname + '?c=' + id + (custom ? '&relay=' + encodeURIComponent(custom) : ri >= 0 ? '&r=' + ri : '');
+  if (window.qrcode) { const q = qrcode(0, 'M'); q.addData(url); q.make(); $('qr').innerHTML = q.createImgTag(6, 14); }
+  $('pairUrl').textContent = url;
+  if (!remote.live) setPair(location.protocol === 'https:' ? '用手機相機掃描 QR Code' : '⚠ 這個頁面不是 HTTPS 網址，手機無法連線或使用陀螺儀');
 }
 $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
@@ -1488,7 +1566,7 @@ function frame() {
   finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < perk.maxHp * .3 ? .3 : 0);
   finalPass.uniforms.uTime.value = t;
   if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2.5, 8); sfx.drip(); } }
-  if (remote.conn) { remote.sendT -= dt; if (remote.sendT <= 0) { remote.sendT = .2; remoteStatus(); } }
+  if (remote.live) { if (!remoteLive()) remoteLost(); else { remote.sendT -= dt; if (remote.sendT <= 0) { remote.sendT = .2; remoteStatus(); } } }
 
   composer.render(dt);
 
