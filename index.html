@@ -333,6 +333,7 @@ const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js')
 const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
 const { OutputPass } = await import('three/addons/postprocessing/OutputPass.js');
 const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
+const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
 
 const $ = id => document.getElementById(id);
 const IS_TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
@@ -566,80 +567,21 @@ const muzzleLight = new THREE.PointLight(0xffa64a, 0, 11, 2); camera.add(muzzleL
 
 /* ───────────────────────── 槍 ───────────────────────── */
 const gun = new THREE.Group(); camera.add(gun);
-const mGun = new THREE.MeshStandardMaterial({ color: 0x25282c, roughness: .38, metalness: .75, emissive: 0x0b0d10, flatShading: true });
-const mGrip = new THREE.MeshStandardMaterial({ color: 0x15130f, roughness: .9, emissive: 0x070707, flatShading: true });
-const mStock = new THREE.MeshStandardMaterial({ color: 0x3a2616, roughness: .7, emissive: 0x0d0906, flatShading: true });
-const mGlove = new THREE.MeshStandardMaterial({ color: 0x1f2321, roughness: .95, emissive: 0x090a09, flatShading: true });
 const mDot = new THREE.MeshBasicMaterial({ color: new THREE.Color(.12, .8, .2) });
 const mShell = new THREE.MeshStandardMaterial({ color: 0x8a1c14, roughness: .5, emissive: 0x120202 });
-const mLens = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.1, 1.15, 1.3) });
 const gp = (geo, mat, x, y, z, rx = 0, parent = gun) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.x = rx; parent.add(m); return m; };
 const B = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const C = (r, len, seg = 8, r2 = r) => new THREE.CylinderGeometry(r, r2, len, seg);
 const HP = Math.PI / 2;
-// 共用：握把、手、前臂（所有槍的握把都在同一位置）
-gp(B(.085, .1, .095), mGlove, .004, -.12, .082, -.28);
-gp(B(.08, .08, .5), mGlove, .05, -.22, .33, -.32).rotation.y = -.22;
-const gripAndGuard = g => {
-  gp(B(.042, .135, .062), mGrip, 0, -.115, .075, -.28, g);
-  gp(B(.01, .008, .07), mGun, 0, -.085, 0, 0, g); gp(B(.01, .04, .008), mGun, 0, -.068, -.035, 0, g);
-};
-// 槍燈模型：每把槍下方都掛一支手電筒
-const torchModel = (g, y, z) => { gp(C(.02, .09, 8, .017), mGun, 0, y, z, HP, g); gp(C(.023, .02), mGun, 0, y, z - .05, HP, g); gp(C(.017, .004), mLens, 0, y, z - .0585, HP, g); };
-
-function buildPistol(g) {
-  const s = new THREE.Group(); g.add(s);
-  gp(B(.046, .05, .3), mGun, 0, 0, -.05, 0, s); gp(B(.048, .012, .09), mGrip, 0, .012, .04, 0, s);
-  gp(B(.008, .014, .012), mGun, -.014, .032, .09, 0, s); gp(B(.008, .014, .012), mGun, .014, .032, .09, 0, s); gp(B(.006, .014, .012), mGun, 0, .032, -.19, 0, s);
-  gp(B(.005, .005, .002), mDot, -.014, .034, .097, 0, s); gp(B(.005, .005, .002), mDot, .014, .034, .097, 0, s);
-  gp(B(.04, .032, .27), mGun, 0, -.038, -.045, 0, g); gp(C(.011, .05, 6), mGun, 0, .002, -.215, HP, g);
-  gripAndGuard(g); torchModel(g, -.074, -.13);
-  const mag = gp(B(.03, .15, .046), mGun, 0, -.13, .08, -.28, g);
-  return { rack: s, travel: .04, mag, magDir: [0, -.96, .28], muzzleZ: -.25, sightY: .036 };
-}
-function buildSMG(g) {
-  gp(B(.05, .07, .34), mGun, 0, -.005, -.06, 0, g); gp(C(.019, .14), mGun, 0, .004, -.29, HP, g); gp(C(.01, .07, 6), mGun, 0, .004, -.39, HP, g);
-  gp(B(.02, .012, .26), mGrip, 0, .036, -.06, 0, g);
-  gp(B(.008, .02, .012), mGun, -.012, .05, .05, 0, g); gp(B(.008, .02, .012), mGun, .012, .05, .05, 0, g); gp(B(.006, .02, .012), mGun, 0, .05, -.21, 0, g);
-  gp(B(.005, .005, .002), mDot, -.012, .055, .057, 0, g); gp(B(.005, .005, .002), mDot, .012, .055, .057, 0, g);
-  gp(B(.03, .045, .2), mGun, 0, -.012, .2, 0, g); gp(B(.036, .08, .02), mGrip, 0, -.03, .3, 0, g);
-  gripAndGuard(g); torchModel(g, -.066, -.22);
-  const rack = gp(B(.022, .012, .03), mGun, .034, .012, -.1, 0, g);
-  const mag = gp(B(.028, .2, .046), mGun, 0, -.14, -.07, .1, g);
-  return { rack, travel: .05, mag, magDir: [0, -.99, -.1], muzzleZ: -.43, sightY: .058 };
-}
-function buildShotgun(g) {
-  gp(B(.052, .07, .28), mGun, 0, -.01, -.02, 0, g); gp(C(.016, .54), mGun, 0, .008, -.43, HP, g); gp(C(.014, .42), mGun, 0, -.028, -.37, HP, g);
-  gp(B(.008, .012, .01), mDot, 0, .03, -.68, 0, g);
-  gp(B(.044, .068, .3), mStock, 0, -.035, .27, -.1, g);
-  gripAndGuard(g); torchModel(g, -.07, -.5);
-  const rack = gp(B(.052, .05, .15), mStock, 0, -.032, -.32, 0, g);
-  const shell = gp(C(.012, .05), mShell, 0, -.16, -.03, HP, g); shell.visible = false;
-  return { rack, travel: .1, shell, muzzleZ: -.71, sightY: .034 };
-}
-function buildRifle(g) {
-  gp(B(.046, .06, .36), mGun, 0, -.01, -.03, 0, g); gp(C(.011, .62, 6), mGun, 0, .004, -.5, HP, g); gp(C(.017, .07), mGun, 0, .004, -.8, HP, g);
-  gp(B(.042, .042, .3), mStock, 0, -.022, -.33, 0, g); gp(B(.044, .072, .32), mStock, 0, -.04, .28, -.1, g);
-  gp(C(.024, .24, 10), mGun, 0, .066, -.04, HP, g); gp(C(.033, .06, 10, .024), mGun, 0, .066, -.18, HP, g); gp(C(.024, .04, 10, .03), mGun, 0, .066, .09, HP, g);
-  gp(B(.02, .03, .02), mGun, 0, .035, -.1, 0, g); gp(B(.02, .03, .02), mGun, 0, .035, .03, 0, g);
-  gripAndGuard(g); torchModel(g, -.062, -.4);
-  const rack = new THREE.Group(); g.add(rack); rack.position.set(.03, .004, .06);
-  gp(B(.03, .012, .012), mGun, .012, 0, 0, 0, rack); gp(new THREE.IcosahedronGeometry(.013, 0), mGun, .032, -.008, 0, 0, rack);
-  const mag = gp(B(.03, .08, .075), mGun, 0, -.075, -.06, 0, g);
-  return { rack, travel: .07, mag, magDir: [0, -1, 0], muzzleZ: -.84, sightY: .066 };
-}
-// dmg：每發（顆）傷害；spread：腰射散布；adsMul：開鏡後散布倍率；gk：槍身後座幅度；cycle：泵動/拉栓時間
+// dmg：每發（顆）傷害；spread：腰射散布；adsMul：開鏡後散布倍率；gk：槍身後座幅度；cycle：泵動/拉栓時間；模型在第一次拿出時才建立
 const WEAPONS = [
-  { name: '手槍', mag: 12, cd: .17, dmg: 1.5, pellets: 1, spread: .004, heat: .2, hs: .016, adsMul: .35, kick: .02, gk: 1, adsFov: 50, reload: 1.3, knock: 1.8, flash: 1, snd: [5200, 170, 1], hip: [.17, -.175, -.43], build: buildPistol },
-  { name: '衝鋒槍', mag: 32, cd: .075, dmg: .8, pellets: 1, spread: .011, heat: .09, hs: .03, adsMul: .45, kick: .011, gk: .55, adsFov: 48, reload: 1.7, knock: 1, flash: .85, snd: [6500, 210, .75], hip: [.16, -.17, -.4], build: buildSMG },
-  { name: '霰彈槍', mag: 6, cd: .9, dmg: .85, pellets: 9, spread: .06, heat: 0, hs: 0, adsMul: .7, kick: .075, gk: 1.9, adsFov: 56, reload: .5, shells: true, cycle: .6, knock: 1.5, flash: 1.6, snd: [3000, 110, 1.3], hip: [.16, -.17, -.36], build: buildShotgun },
-  { name: '狙擊步槍', mag: 5, cd: 1.2, dmg: 9, pellets: 1, spread: .035, heat: 0, hs: 0, adsMul: 0, kick: .06, gk: 1.6, adsFov: 17, scope: true, pierce: 3, reload: 2.1, cycle: .85, knock: 4, flash: 1.3, snd: [4200, 130, 1.4], hip: [.16, -.17, -.34], build: buildRifle }
+  { name: '手槍', adsZ: -.3, mag: 12, cd: .17, dmg: 1.5, pellets: 1, spread: .004, heat: .2, hs: .016, adsMul: .35, kick: .02, gk: 1, adsFov: 50, reload: 1.55, spin: true, knock: 1.8, flash: 1, snd: [5200, 170, 1], hip: [.115, -.125, -.34], cas: [1, 1], build: buildPistol },
+  { name: '衝鋒槍', adsZ: -.27, mag: 32, cd: .075, dmg: .8, pellets: 1, spread: .011, heat: .09, hs: .03, adsMul: .45, kick: .011, gk: .55, adsFov: 48, reload: 1.75, knock: 1, flash: .85, snd: [6500, 210, .75], hip: [.12, -.135, -.3], cas: [1, 1], build: buildSMG },
+  { name: '霰彈槍', adsZ: -.27, mag: 6, cd: .9, dmg: .85, pellets: 9, spread: .06, heat: 0, hs: 0, adsMul: .7, kick: .075, gk: 1.9, adsFov: 56, reload: .5, shells: true, cycle: .6, knock: 1.5, flash: 1.6, snd: [3000, 110, 1.3], hip: [.12, -.13, -.28], cas: [1.9, 2.6], build: buildShotgun },
+  { name: '狙擊步槍', adsZ: -.2, mag: 5, cd: 1.2, dmg: 9, pellets: 1, spread: .035, heat: 0, hs: 0, adsMul: 0, kick: .06, gk: 1.6, adsFov: 17, scope: true, pierce: 3, reload: 2.1, cycle: .85, knock: 4, flash: 1.3, snd: [4200, 130, 1.4], hip: [.12, -.14, -.27], cas: [1.4, 2.7], build: buildRifle }
 ];
-for (const w of WEAPONS) {
-  w.g = new THREE.Group(); gun.add(w.g); w.parts = w.build(w.g); w.baseMag = w.ammo = w.mag; w.g.visible = false;
-  const P = w.parts; P.rackZ = P.rack.position.z; if (P.mag) P.magBase = P.mag.position.clone();
-}
-let wi = 0, cur = WEAPONS[0], baseFov = 68, ads = 0, sgTilt = 0, switchT = 0, switchTo = 0, cycleT = 0, cycSnd = true, reloadDur = 1, rStage = 0;
+for (const w of WEAPONS) w.baseMag = w.ammo = w.mag;
+let wi = 0, cur = WEAPONS[0], baseFov = 68, ads = 0, sgTilt = 0, switchT = 0, switchTo = 0, cycleT = 0, cycDur = 1, cycSnd = true, cycEject = false, flip = false, reloadDur = 1, rStage = 0;
 const muzzle = new THREE.Object3D(); gun.add(muzzle);
 
 function flashTex() {
@@ -657,8 +599,8 @@ function flashTex() {
 }
 const flashMat = new THREE.MeshBasicMaterial({ map: flashTex(), color: new THREE.Color(3.2, 2.3, 1.2), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, depthTest: false, side: THREE.DoubleSide, fog: false });
 const flash = new THREE.Group(); muzzle.add(flash); flash.visible = false;
-flash.add(new THREE.Mesh(new THREE.PlaneGeometry(.26, .26), flashMat));
-for (const rz of [0, Math.PI / 2]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(.4, .13), flashMat); m.rotation.set(0, Math.PI / 2, 0); m.rotateX(rz); m.position.z = -.14; flash.add(m); }
+flash.add(new THREE.Mesh(new THREE.PlaneGeometry(.2, .2), flashMat));
+for (const rz of [0, Math.PI / 2]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(.3, .1), flashMat); m.rotation.set(0, Math.PI / 2, 0); m.rotateX(rz); m.position.z = -.11; flash.add(m); }
 
 /* ───────────────────────── 粒子系統 ───────────────────────── */
 class Particles {
@@ -773,6 +715,7 @@ const sfx = {
   shot(w) { const s = w.snd; noise(.22 * s[2], 'lowpass', s[0], 320, .95); noise(.05, 'highpass', 2500, 5000, .4); tone('triangle', s[1], 42, .14 * s[2], .8); },
   magOut() { noise(.05, 'bandpass', 1800, 900, .35, 3); }, magIn() { noise(.06, 'bandpass', 2600, 1400, .45, 3); },
   rack() { noise(.05, 'highpass', 2200, 4200, .4); setTimeout(() => noise(.04, 'highpass', 3000, 5000, .35), 90); },
+  casing() { tone('sine', rand(3600, 5600), rand(2400, 3200), .06, .035); }, magHit() { noise(.07, 'bandpass', 1500, 600, .3, 2); tone('triangle', 300, 120, .06, .15); },
   shell() { noise(.045, 'bandpass', 2200, 1300, .4, 4); }, sw() { noise(.08, 'lowpass', 900, 300, .25); },
   pump() { noise(.07, 'bandpass', 1300, 700, .5, 2); setTimeout(() => noise(.07, 'bandpass', 900, 1500, .5, 2), 170); },
   bolt() { noise(.05, 'bandpass', 2400, 1500, .4, 3); setTimeout(() => noise(.05, 'bandpass', 1500, 2600, .4, 3), 260); },
@@ -1046,6 +989,202 @@ function buildZombie(G) {
 const ZB = { normal: buildZombie({ g: 1 }), thin: buildZombie({ g: .86 }), fat: buildZombie({ g: 1.1, belly: 1.25 }), bulk: buildZombie({ g: 1.28, belly: .8 }) };
 const hitMat = new THREE.MeshBasicMaterial({ visible: false }), IDENT = new THREE.Matrix4(), eyeGeo = new THREE.SphereGeometry(.0105, 8, 6);
 
+/* ───────────────────────── 槍枝與手部模型（SDF 硬表面雕塑） ─────────────────────────
+   圓角方塊、圓柱等基本形狀做布林運算後，以 Surface Nets 轉為網格；頂點色含凹處壓暗與稜線磨損。 */
+const sdBox = (p, cx, cy, cz, hx, hy, hz, r = 0) => {
+  const x = Math.abs(p[0] - cx) - hx + r, y = Math.abs(p[1] - cy) - hy + r, z = Math.abs(p[2] - cz) - hz + r;
+  return Math.hypot(Math.max(x, 0), Math.max(y, 0), Math.max(z, 0)) + Math.min(Math.max(x, y, z), 0) - r;
+};
+const sdCylZ = (p, cx, cy, z0, z1, r) => { const d = Math.hypot(p[0] - cx, p[1] - cy) - r, e = Math.abs(p[2] - (z0 + z1) / 2) - (z1 - z0) / 2; return Math.min(Math.max(d, e), 0) + Math.hypot(Math.max(d, 0), Math.max(e, 0)); };
+const rotX = (p, oy, oz, a) => { const c = Math.cos(a), s = Math.sin(a), y = p[1] - oy, z = p[2] - oz; return [p[0], y * c + z * s, -y * s + z * c]; };
+const slots = (v, period, w) => Math.abs(((v % period) + period) % period - period / 2) - w;     // <0 表示在溝槽內
+const GQ = IS_TOUCH ? 1.45 : 1.15, GRAKE = .28, gripL = p => rotX(p, -.012, .034, -GRAKE);                // 握把座標系（向後傾）
+const sdGrip = p => { const g = gripL(p); return smin(sdBox(g, 0, -.052, 0, .0138, .056, .0215, .007), sdBox(g, 0, -.004, .012, .012, .012, .02, .006), .008); };
+const sdGuard = p => Math.min(Math.max(sdBox(p, 0, -.034, -.012, .0055, .021, .034, .011), -sdBox(p, 0, -.032, -.012, .02, .0135, .0265, .009)), sdBox(rotX(p, -.02, -.006, .25), 0, -.013, 0, .0035, .012, .0035, .002));
+const sdLamp = (p, x, y, z) => Math.min(sdCylZ(p, x, y, z, z + .07, .0105), sdCylZ(p, x, y, z - .022, z, .0135));     // 槍燈
+let envTex = null;
+function gunMats() {
+  if (gunMats.m) return gunMats.m;
+  const pm = new THREE.PMREMGenerator(renderer); envTex = pm.fromScene(new RoomEnvironment(), .04).texture; pm.dispose();   // 只給槍與彈殼用的柔和反射
+  return gunMats.m = {
+    metal: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: .7, roughness: .64, envMap: envTex, envMapIntensity: .22 }),
+    poly: new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0, roughness: .85, envMap: envTex, envMapIntensity: .12 }),
+    brass: new THREE.MeshStandardMaterial({ color: 0xd6a94a, metalness: .95, roughness: .28, envMap: envTex, envMapIntensity: .7 }),
+    glass: new THREE.MeshStandardMaterial({ color: 0x0a1020, metalness: .9, roughness: .08, envMap: envTex, envMapIntensity: 1.2 })
+  };
+}
+const cMetal = (p, c) => { const n = zn.fbm(p[0] * 9 + p[1] * 7, p[2] * 9, 10, 2); c[0] = .1 + n * .03; c[1] = .105 + n * .03; c[2] = .115 + n * .03; c[3] = .75; };
+const cBlack = (p, c) => { c[0] = c[1] = c[2] = .035; c[3] = .35; };
+const cPoly = (p, c) => { const n = zn.fbm(p[0] * 30 + p[2] * 20, p[1] * 30, 12, 2); c[0] = c[1] = .05 + n * .03; c[2] = .055 + n * .03; c[3] = .12; };
+const cWood = (p, c) => { const n = zn.fbm(p[0] * 10 + p[1] * 40, p[2] * 3 + p[1] * 6, 8, 3), k = .5 + n * .6; c[0] = .2 * k; c[1] = .11 * k; c[2] = .055 * k; c[3] = .08; };
+function sdfMesh(sdf, mn, mx, cell, colFn) {
+  const m = surfaceNets(sdf, mn, mx, cell), n = m.pos.length / 3, Nn = new Float32Array(n * 3), Cc = new Float32Array(n * 3), q = [0, 0, 0], c = [0, 0, 0, 0], e = cell * .5;
+  for (let i = 0; i < n; i++) {
+    const p = [m.pos[i * 3], m.pos[i * 3 + 1], m.pos[i * 3 + 2]], f = (x, y, z) => { q[0] = p[0] + x; q[1] = p[1] + y; q[2] = p[2] + z; return sdf(q); };
+    let nx = f(e, 0, 0) - f(-e, 0, 0), ny = f(0, e, 0) - f(0, -e, 0), nz = f(0, 0, e) - f(0, 0, -e); const l = Math.hypot(nx, ny, nz) || 1; nx /= l; ny /= l; nz /= l;
+    colFn(p, c);
+    const ao = clamp(.4 + .6 * f(nx * .006, ny * .006, nz * .006) / .006, .3, 1);                   // 凹處壓暗
+    const wear = clamp((f(-nx * .003, -ny * .003, -nz * .003) + .003) / .003, 0, 1) * c[3];         // 稜線磨損露出亮金屬
+    Nn[i * 3] = nx; Nn[i * 3 + 1] = ny; Nn[i * 3 + 2] = nz;
+    for (let k = 0; k < 3; k++) Cc[i * 3 + k] = lin((c[k] + (.5 - c[k]) * wear) * ao);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(m.pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(Nn, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(Cc, 3)); g.setIndex(m.idx); return g;
+}
+const part = (g, sdf, mn, mx, cell, colFn, mat) => { const m = new THREE.Mesh(sdfMesh(sdf, mn, mx, cell * GQ, colFn), gunMats()[mat]); g.add(m); return m; };
+const dots = (parent, list) => { for (const d of list) gp(B(.0036, .0036, .001), mDot, d[0], d[1], d[2], 0, parent); };
+
+// 握槍的手（戰術手套）與前臂，所有槍共用
+function buildHand() {
+  const seg3 = (g, a, b, c, d, r) => Math.min(sdCap(g, a, b, r, r), sdCap(g, b, c, r, r * .95), d ? sdCap(g, c, d, r * .95, r * .85) : 1e9);
+  const sdf = p => {
+    const g = gripL(p); let d = sdEll(g, [.013, -.05, .03], [.029, .047, .03]);
+    for (const y of [-.036, -.058, -.08]) d = smin(d, seg3(g, [.026, y, .012], [.021, y - .002, -.03], [-.003, y - .004, -.037], [-.02, y - .005, -.022], .0098), .007);
+    d = smin(d, seg3(g, [.024, -.012, .01], [.021, -.004, -.034], [.012, -.01, -.052], null, .009), .007);            // 食指搭在扳機旁
+    d = smin(d, seg3(g, [-.012, -.012, .04], [-.021, .004, .002], [-.02, .008, -.03], null, .0105), .008);           // 拇指
+    return smin(d, sdCap(g, [.014, -.07, .045], [.06, -.21, .38], .034, .05), .02);                                   // 手腕到前臂
+  };
+  const col = (p, c) => {
+    const g = gripL(p), n = zn.fbm(p[0] * 40 + p[2] * 25, p[1] * 40, 14, 2);
+    if (g[2] > .1 + n * .02) { c[0] = .1 + n * .05; c[1] = .115 + n * .05; c[2] = .085 + n * .04; c[3] = 0; }       // 袖子
+    else { const k = g[0] > .03 && g[2] < .06 ? .11 : .06; c[0] = c[1] = k + n * .03; c[2] = k + n * .028; c[3] = .1; }   // 手套（手背護墊較亮）
+  };
+  return part(gun, sdf, [-.045, -.3, -.035], [.115, .03, .46], .0045, col, 'poly');
+}
+function buildPistol(g) {
+  const slide = p => {
+    let d = sdBox(p, 0, .017, -.0425, .0135, .017, .0975, .0045);
+    d = Math.max(d, -Math.max(slots(p[2] - .018, .0058, .0011), .0118 - Math.abs(p[0]), Math.abs(p[2] - .036) - .016, Math.abs(p[1] - .017) - .0135));   // 後段防滑紋
+    d = Math.max(d, -sdBox(p, .009, .03, -.035, .009, .008, .02, .002));                                                                              // 拋殼口
+    d = Math.max(d, -sdCylZ(p, 0, .016, -.16, -.12, .0072));
+    d = Math.min(d, sdBox(p, 0, .0375, -.128, .0025, .0045, .005, .001));                                                                             // 準星
+    return Math.min(d, Math.max(sdBox(p, 0, .0375, .046, .0105, .0048, .005, .001), -sdBox(p, 0, .041, .046, .003, .004, .01)));                      // 照門
+  };
+  const frame = p => {
+    let d = sdBox(p, 0, -.0085, -.04, .0128, .0095, .088, .004);
+    d = Math.min(d, Math.max(sdBox(p, 0, -.0215, -.092, .0095, .0045, .03, .0015), -Math.max(slots(p[2], .0095, .0017), p[1] + .0215)));              // 下導軌
+    d = Math.min(d, Math.max(sdCylZ(p, 0, .016, -.146, 0, .0062), -sdCylZ(p, 0, .016, -.16, -.1, .0042)));                                            // 槍管
+    d = Math.min(smin(d, sdGrip(p), .006), sdGuard(p));
+    return Math.min(d, sdLamp(p, 0, -.037, -.118));
+  };
+  const magS = p => { const q = gripL(p); return Math.min(sdBox(q, 0, -.058, 0, .0098, .062, .0165, .003), sdBox(q, 0, -.117, .001, .0135, .005, .0215, .003)); };
+  const rack = part(g, slide, [-.019, -.004, -.146], [.019, .049, .062], .0026, cMetal, 'metal');
+  dots(rack, [[-.0068, .0395, .0513], [.0068, .0395, .0513], [0, .0395, -.1228]]);
+  part(g, frame, [-.02, -.135, -.152], [.02, .032, .08], .003, (p, c) => Math.hypot(p[0], p[1] - .016) < .009 && p[2] < -.01 ? cMetal(p, c) : cPoly(p, c), 'poly');
+  const mag = part(g, magS, [-.017, -.142, -.005], [.017, 0, .092], .003, cMetal, 'metal');
+  return { rack, travel: .038, mag, magDir: [0, -.96, .277], muzzleZ: -.152, sightY: .0412, eject: [.017, .03, -.03] };
+}
+function buildSMG(g) {
+  const body = p => {
+    let d = sdBox(p, 0, .012, -.05, .0195, .027, .15, .007);
+    d = Math.min(d, Math.max(sdBox(p, 0, .0425, -.06, .0085, .0045, .13, .001), -Math.max(slots(p[2], .01, .002), .042 - p[1])));                    // 上導軌
+    d = Math.min(d, sdCylZ(p, 0, .014, -.4, -.19, .0085), sdCylZ(p, 0, .014, -.4, -.365, .0125));                                                    // 槍管與消焰器
+    d = Math.max(d, -sdCylZ(p, 0, .014, -.42, -.3, .0048));
+    d = Math.max(d, -sdBox(p, .016, .02, -.07, .008, .009, .03, .002));
+    d = Math.min(d, sdBox(p, 0, -.028, -.085, .0145, .02, .024, .004));                                                                               // 彈匣井
+    d = Math.min(d, Math.max(sdBox(p, 0, .056, .06, .012, .0095, .004, .002), -sdCylZ(p, 0, .057, .05, .07, .0045)));                                 // 覘孔照門
+    d = Math.min(d, Math.max(sdCylZ(p, 0, .057, -.19, -.178, .012), -sdCylZ(p, 0, .057, -.2, -.17, .0095)), sdBox(p, 0, .052, -.184, .0018, .006, .002));   // 護圈準星
+    d = Math.min(d, sdBox(p, 0, .016, .125, .014, .016, .03, .006));                                                                                 // 後蓋（無托型）
+    return Math.min(d, sdLamp(p, -.031, .006, -.29));
+  };
+  const furn = p => {
+    let d = Math.max(sdBox(p, 0, .006, -.255, .0215, .0235, .062, .009), -Math.max(slots(p[2] + .24, .03, .008), Math.abs(p[1] - .008) - .006, .015 - Math.abs(p[0])));   // 護木散熱孔
+    return Math.min(smin(d, sdGrip(p), .004), sdGuard(p));
+  };
+  const magS = p => sdBox(rotX(p, -.03, -.085, .1), 0, -.085, 0, .0105, .085, .0175, .003);
+  part(g, body, [-.047, -.055, -.41], [.027, .073, .165], .0034, cMetal, 'metal');
+  part(g, furn, [-.026, -.135, -.325], [.026, .036, .085], .0034, cPoly, 'poly');
+  const rack = part(g, p => sdCap(p, [-.016, .03, -.245], [-.036, .03, -.245], .0055, .0075), [-.05, .018, -.26], [-.008, .042, -.23], .0028, cMetal, 'metal');
+  const mag = part(g, magS, [-.016, -.21, -.125], [.016, -.02, -.055], .0032, cMetal, 'metal');
+  return { rack, travel: .05, mag, magDir: [0, -.995, -.1], muzzleZ: -.405, sightY: .057, eject: [.024, .02, -.07] };
+}
+function buildShotgun(g) {
+  const body = p => {
+    let d = sdBox(p, 0, .006, -.03, .0185, .03, .11, .007);
+    d = Math.max(d, -sdBox(p, .016, .012, -.04, .008, .009, .035, .003));
+    d = Math.min(d, Math.max(sdCylZ(p, 0, .021, -.68, -.13, .0108), -sdCylZ(p, 0, .021, -.7, -.5, .0088)));                                           // 槍管
+    d = Math.min(d, sdCylZ(p, 0, -.005, -.62, -.13, .0115), sdCylZ(p, 0, -.005, -.636, -.62, .0128), sdBox(p, 0, .008, -.6, .0065, .021, .006, .003));   // 彈倉管與固定環
+    d = Math.min(d, sdSph(p, 0, .035, -.672, .003), sdBox(p, 0, .004, .14, .011, .011, .07, .005));
+    return Math.min(d, sdLamp(p, -.027, .008, -.5));
+  };
+  const furn = p => Math.min(smin(smin(sdBox(p, 0, -.004, .3, .014, .036, .1, .012), sdBox(p, 0, -.004, .405, .016, .045, .008, .004), .004), sdGrip(p), .004), sdGuard(p));
+  const pump = p => Math.max(sdBox(p, 0, -.006, -.31, .0205, .0215, .078, .014) + .0011 * Math.sin(p[2] * 330), -sdCylZ(p, 0, .021, -.5, -.2, .0114));
+  part(g, body, [-.043, -.026, -.685], [.021, .04, .215], .0036, cMetal, 'metal');
+  part(g, furn, [-.02, -.135, -.05], [.02, .034, .416], .0036, (p, c) => p[2] < .1 || p[2] > .396 ? cPoly(p, c) : cWood(p, c), 'poly');
+  const rack = part(g, pump, [-.023, -.03, -.392], [.023, .018, -.228], .0032, cWood, 'poly');
+  const shell = gp(C(.0105, .05), mShell, 0, -.16, -.03, HP, g); shell.visible = false;
+  return { rack, travel: .09, shell, muzzleZ: -.69, sightY: .0375, eject: [.024, .012, -.04] };
+}
+function buildRifle(g) {
+  const body = p => {
+    let d = sdBox(p, 0, .008, -.02, .0155, .0185, .125, .011);
+    d = Math.max(d, -sdBox(p, .014, .014, -.03, .008, .008, .035, .002));
+    d = Math.min(d, sdCap(p, [0, .01, -.14], [0, .01, -.8], .0105, .0085));                                                                           // 重型槍管
+    d = Math.min(d, Math.max(sdBox(p, 0, .01, -.815, .0125, .0125, .03, .004), -Math.max(slots(p[2] + .8, .015, .003), Math.abs(p[1] - .01) - .006)));   // 制退器
+    d = Math.max(d, -sdCylZ(p, 0, .01, -.86, -.7, .004));
+    for (const z of [-.105, .035]) d = Math.min(d, sdBox(p, 0, .052, z, .0185, .03, .009, .006));                                                    // 鏡環
+    return d;
+  };
+  const scope = p => {
+    let d = Math.min(sdCylZ(p, 0, .068, -.17, .1, .0152), sdCap(p, [0, .068, -.175], [0, .068, -.235], .0135, .024), sdCylZ(p, 0, .068, -.3, -.235, .0265));
+    d = Math.min(d, sdCap(p, [0, .068, .085], [0, .068, .11], .015, .02), sdCylZ(p, 0, .068, .105, .145, .0215));
+    d = Math.max(d, -Math.min(sdCylZ(p, 0, .068, -.31, -.288, .0235), sdCylZ(p, 0, .068, .135, .15, .0185)));
+    d = Math.min(d, Math.max(Math.hypot(p[0], p[2] + .04) - .011, Math.abs(p[1] - .09) - .012), Math.max(Math.hypot(p[1] - .068, p[2] + .04) - .011, Math.abs(p[0] + .024) - .011));   // 調節鈕
+    return d;
+  };
+  const furn = p => {
+    let d = smin(sdBox(p, 0, -.014, -.3, .0195, .02, .165, .012), sdBox(p, 0, -.018, -.02, .0195, .018, .13, .008), .012);
+    d = smin(d, sdBox(p, 0, -.02, .27, .0165, .038, .17, .012), .012); d = smin(d, sdBox(p, 0, .022, .27, .0135, .014, .075, .007), .006);
+    d = Math.min(d, sdBox(p, 0, -.02, .445, .0175, .05, .008, .004), sdLamp(p, -.031, -.012, -.4));
+    return Math.min(smin(d, sdGrip(p), .004), sdGuard(p));
+  };
+  const bolt = p => Math.min(smin(sdCylZ(p, 0, .012, .095, .135, .0092), sdCap(p, [.012, .012, .1], [.04, -.008, .106], .0045, .0045), .003), sdSph(p, .044, -.012, .107, .0105));
+  part(g, body, [-.02, -.012, -.85], [.02, .084, .11], .0036, cMetal, 'metal');
+  part(g, scope, [-.037, .04, -.305], [.03, .105, .15], .003, cBlack, 'metal');
+  part(g, furn, [-.046, -.135, -.47], [.022, .04, .456], .0038, (p, c) => { if (p[2] > .436 || p[0] < -.021) cBlack(p, c); else { const n = zn.fbm(p[0] * 20 + p[1] * 20, p[2] * 6, 10, 2); c[0] = .13 + n * .05; c[1] = .14 + n * .05; c[2] = .1 + n * .04; c[3] = .1; } }, 'poly');
+  const rack = part(g, bolt, [-.011, -.025, .092], [.057, .024, .138], .0028, cMetal, 'metal');
+  const mag = part(g, p => sdBox(p, 0, -.052, -.075, .0115, .022, .036, .004), [-.014, -.077, -.114], [.014, -.028, -.036], .003, cMetal, 'metal');
+  const lens = new THREE.Mesh(new THREE.CircleGeometry(.0185, 16), gunMats().glass); lens.position.set(0, .068, .136); g.add(lens);
+  return { rack, travel: .075, mag, magDir: [0, -1, 0], muzzleZ: -.85, sightY: .068, eject: [.022, .014, -.03] };
+}
+function ensureWeapon(w) {
+  if (w.g) return;
+  if (!ensureWeapon.hand) ensureWeapon.hand = buildHand();
+  w.g = new THREE.Group(); gun.add(w.g); const P = w.parts = w.build(w.g);
+  P.rackZ = P.rack.position.z; if (P.mag) P.magBase = P.mag.position.clone();
+}
+
+// 彈殼與丟棄的彈匣：簡單剛體（重力、落地彈跳、清脆落地聲）
+const debris = [], casGeo = new THREE.CylinderGeometry(.0048, .0052, .019, 8), casPool = [];
+const vR = new THREE.Vector3(), vU = new THREE.Vector3(), vF = new THREE.Vector3();
+function camAxes() { vR.set(1, 0, 0).applyQuaternion(camera.quaternion); vU.set(0, 1, 0).applyQuaternion(camera.quaternion); vF.set(0, 0, -1).applyQuaternion(camera.quaternion); }
+function addDebris(m, r, s, u, f, spin, life, snd) {
+  camAxes(); debris.push({ m, vx: vR.x * r + vU.x * u + vF.x * f, vy: vR.y * r + vU.y * u + vF.y * f, vz: vR.z * r + vU.z * u + vF.z * f,
+    ax: rand(-spin, spin), ay: rand(-spin, spin), az: rand(-spin, spin), life, snd, rad: s, pooled: casPool.includes(m) });
+}
+function ejectCasing(w) {
+  let m = casPool.find(c => !c.visible); if (!m) { if (casPool.length >= 28) return; m = new THREE.Mesh(casGeo, gunMats().brass); scene.add(m); casPool.push(m); }
+  m.material = w.shells ? mShell : gunMats().brass; m.scale.set(w.cas[0], w.cas[1], w.cas[0]); m.visible = true;
+  gun.updateWorldMatrix(true, false); m.position.set(...w.parts.eject); gun.localToWorld(m.position); m.quaternion.copy(camera.quaternion); m.rotateX(HP);
+  addDebris(m, rand(1.3, 2.3), .006 * w.cas[0], rand(1.2, 2.2), rand(-.6, .1), 22, 3.5, 'casing');
+}
+function dropMag(w) {
+  const src = w.parts.mag, m = new THREE.Mesh(src.geometry, src.material); src.updateWorldMatrix(true, false);
+  src.matrixWorld.decompose(m.position, m.quaternion, m.scale); scene.add(m);
+  addDebris(m, rand(-.5, -.1), .02, rand(-.9, -.3), rand(.2, .6), 5, 4, 'magHit');
+}
+function updateDebris(dt) {
+  for (let i = debris.length - 1; i >= 0; i--) {
+    const d = debris[i], p = d.m.position; d.life -= dt; d.vy -= 9.8 * dt; p.x += d.vx * dt; p.y += d.vy * dt; p.z += d.vz * dt;
+    d.m.rotation.x += d.ax * dt; d.m.rotation.y += d.ay * dt; d.m.rotation.z += d.az * dt;
+    if (p.y < d.rad && d.vy < 0) {
+      p.y = d.rad; if (d.vy < -1 && d.snd) { sfx[d.snd](); d.snd = d.snd === 'casing' && Math.random() < .5 ? 'casing' : null; }
+      d.vy *= -.38; d.vx *= .55; d.vz *= .55; d.ax *= .4; d.ay *= .4; d.az *= .4; if (Math.abs(d.vy) < .35) { d.vy = 0; d.ax = d.ay = d.az = 0; d.vx = d.vz = 0; }
+    }
+    if (d.life <= 0) { if (d.pooled) d.m.visible = false; else scene.remove(d.m); debris.splice(i, 1); }
+  }
+}
+
 /* ───────────────────────── 怪物 ───────────────────────── */
 const TYPES = {
   walker: { build: 'normal', tint: [1, 1, 1], hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [1.76, 0.14, 0.06], lean: .35, score: 100 },
@@ -1174,13 +1313,13 @@ function hurtPlayer(d, sx, sz) {
 const vDir = new THREE.Vector3(), vAim = new THREE.Vector3(), vCam = new THREE.Vector3(), vPos = new THREE.Vector3(), vN = new THREE.Vector3(), vMz = new THREE.Vector3();
 let shotId = 0;
 function setWeapon(n) {
-  wi = n; cur = WEAPONS[n]; WEAPONS.forEach((w, i) => w.g.visible = i === n);
-  muzzle.position.set(0, .004, cur.parts.muzzleZ); hud();
+  wi = n; cur = WEAPONS[n]; ensureWeapon(cur); WEAPONS.forEach((w, i) => { if (w.g) w.g.visible = i === n; });
+  muzzle.position.set(0, cur.scope || cur.shells ? .012 : .016, cur.parts.muzzleZ); hud();
 }
 function switchWeapon(d, abs) {
   if (state !== 'play' || switchT > 0) return;
   const n = abs !== undefined ? abs : (wi + d + WEAPONS.length) % WEAPONS.length; if (n === wi) return;
-  switchTo = n; switchT = .42; reloadT = 0; cycleT = 0; sfx.sw();
+  switchTo = n; switchT = .42; reloadT = 0; cycleT = 0; flip = false; if (cur.parts.mag) { cur.parts.mag.position.copy(cur.parts.magBase); cur.parts.mag.rotation.set(0, 0, 0); } sfx.sw();
   if (IS_TOUCH && !remote.on) { input.ads = false; $('ads').classList.remove('act'); }
 }
 function reload() {
@@ -1206,7 +1345,7 @@ function fire() {
   const w = cur;
   if (w.ammo <= 0) { sfx.dry(); fireCD = .3; reload(); return; }
   const scoped = w.scope && ads > .85;
-  w.ammo--; fireCD = w.cd; kick = 1; if (w.cycle) { cycleT = w.cycle; cycSnd = false; }
+  w.ammo--; fireCD = w.cd; kick = 1; if (w.cycle) { cycleT = cycDur = w.cycle; cycSnd = false; cycEject = true; } else ejectCasing(w);
   recoilP += w.kick * perk.recoil * (1 - ads * .4); shake = Math.max(shake, .012 * w.gk); heat = Math.min(1, heat + w.heat);
   flashT = .05; flash.visible = true; flash.rotation.z = rand(6.28); flash.scale.setScalar(rand(.75, 1.25) * w.flash); muzzleLight.intensity = 14 * w.flash;
   sfx.shot(w); navigator.vibrate?.(12); remoteSend({ t: 'v', ms: 25 });
@@ -1326,7 +1465,7 @@ function startWave(n) { wave = n; toSpawn = Math.min(42, 4 + n * 2); spawnT = 2.
 function resetGame() {
   while (enemies.length) removeEnemy(enemies[0]); rayTargets.length = 0;
   pools.forEach(p => p.visible = false); holes.forEach(h => h.visible = false);
-  hp = 100; score = 0; kills = 0; reloadT = 0; switchT = 0; cycleT = 0; damageFx = 0; heat = 0; waveGap = 0; attackGrace = 0;
+  hp = 100; score = 0; kills = 0; reloadT = 0; switchT = 0; cycleT = 0; flip = false; damageFx = 0; heat = 0; waveGap = 0; attackGrace = 0;
   resetPerks(); setDark(!!MODES[gameMode].dark); comboN = comboT = 0; $('combo').textContent = ''; bossE = null; bossPending = false; perkOpts = [];
   for (const s of spits) { s.life = 0; s.o.visible = false; } for (const p of pickups) { p.life = 0; p.g.visible = false; }
   timeLeft = MODES[gameMode].time || 0; lastSec = -1;
@@ -1444,51 +1583,64 @@ $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
-const clock = new THREE.Clock(); let fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0, lastUI = -1;
+const clock = new THREE.Clock(); let timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
   const w = cur, P = w.parts, play = state === 'play';
   // 換槍
   if (switchT > 0) { const b = switchT; switchT -= dt; if (b > .21 && switchT <= .21) setWeapon(switchTo); }
   // 換彈
-  let tilt = 0, magOff = 0, rackR = 0, lift = 0, shellP = -1;
+  let tilt = 0, flick = 0, lift = 0, rackR = 0, spin = 0, shellP = -1, mx = 0, my = 0, mz = 0, mrot = 0;
   if (reloadT > 0) {
     reloadT -= dt; const p = clamp(1 - reloadT / reloadDur, 0, 1);
-    if (w.shells) {            // 霰彈槍：一發一發塞，可開火中斷
+    if (w.shells) {            // 霰彈槍：一發一發拋進去，可開火中斷；裝完後單手甩槍上膛
       shellP = p; lift = Math.sin(Math.PI * seg(.5, .8, p));
       if (rStage === 0 && p > .55) { rStage = 1; w.ammo++; sfx.shell(); hud(); }
-      if (reloadT <= 0) { if (w.ammo < w.mag && !input.fire) { reloadT = reloadDur; rStage = 0; } else { reloadT = 0; cycleT = w.cycle; cycSnd = false; } }
-    } else {                   // 彈匣：傾斜槍身 → 退匣 → 插新匣 → 拉滑套/槍機
-      tilt = ss(seg(0, .18, p)) * (1 - ss(seg(.84, 1, p)));
-      magOff = p < .45 ? ss(seg(.14, .38, p)) : 1 - ss(seg(.5, .72, p));
-      lift = Math.sin(Math.PI * seg(.68, .8, p)); rackR = Math.sin(Math.PI * seg(.84, .96, p));
-      P.mag.visible = !(p > .38 && p < .5);
-      if (rStage === 0 && p > .16) { rStage = 1; sfx.magOut(); }
-      if (rStage === 1 && p > .7) { rStage = 2; sfx.magIn(); }
-      if (rStage === 2 && p > .86) { rStage = 3; sfx.rack(); }
+      if (reloadT <= 0) { if (w.ammo < w.mag && !input.fire) { reloadT = reloadDur; rStage = 0; } else { reloadT = 0; cycleT = cycDur = .8; cycSnd = false; cycEject = false; flip = true; } }
+    } else {                   // 彈匣：甩槍退匣 → 新彈匣拋上來接住 → （手槍）轉槍 → 上膛
+      flick = Math.sin(Math.PI * seg(0, .17, p));
+      tilt = ss(seg(.1, .25, p)) * (1 - ss(seg(.6, .74, p)));
+      if (rStage === 0 && p > .09) { rStage = 1; sfx.magOut(); dropMag(w); }
+      const u = seg(.27, .58, p), k = 1 - u;
+      P.mag.visible = p < .09 || p >= .27;
+      if (p >= .09 && u < 1) { mx = -.11 * k; my = -.38 * k * k + .05 * Math.sin(Math.PI * u) * k; mz = .07 * k; mrot = k * k * 11; }
+      if (rStage === 1 && p > .58) { rStage = 2; sfx.magIn(); }
+      lift = Math.sin(Math.PI * seg(.57, .7, p));
+      if (w.spin) spin = ss(seg(.66, .9, p)) * Math.PI * 2;
+      rackR = Math.sin(Math.PI * seg(.86, .97, p));
+      if (rStage === 2 && p > .88) { rStage = 3; sfx.rack(); }
       if (reloadT <= 0) { w.ammo = w.mag; hud(); }
     }
   } else if (P.mag) P.mag.visible = true;
-  if (cycleT > 0) { cycleT -= dt; if (!cycSnd && cycleT < w.cycle * .7) { cycSnd = true; w.shells ? sfx.pump() : sfx.bolt(); } }
+  if (cycleT > 0) {
+    cycleT -= dt;
+    if (!cycSnd && cycleT < cycDur * .7) { cycSnd = true; w.shells ? sfx.pump() : sfx.bolt(); if (cycEject) { cycEject = false; ejectCasing(w); } }
+    if (cycleT <= 0) flip = false;
+  }
   // 開火
   fireCD -= dt; heat = Math.max(0, heat - dt * 1.4);
   if (play && input.fire && fireCD <= 0 && switchT <= 0 && cycleT <= 0 && (reloadT <= 0)) fire();
   kick *= Math.exp(-dt * 13); recoilP *= Math.exp(-dt * 9); shake *= Math.exp(-dt * 8);
   // 開鏡
-  const wantAds = play && input.ads && reloadT <= 0 && switchT <= 0;
+  const wantAds = play && input.ads && reloadT <= 0 && switchT <= 0 && !flip;
   ads += ((wantAds ? 1 : 0) - ads) * Math.min(1, dt * 13); if (ads < .002) ads = 0;
   sgTilt += ((reloadT > 0 && w.shells ? 1 : 0) - sgTilt) * Math.min(1, dt * 9);
-  const cyc = cycleT > 0 && w.cycle ? Math.sin(Math.PI * clamp(1 - cycleT / w.cycle, 0, 1)) : 0;
+  const cp = cycleT > 0 ? clamp(1 - cycleT / cycDur, 0, 1) : 0, cyc = cycleT > 0 ? Math.sin(Math.PI * cp) : 0, fl = flip ? ss(cp) * Math.PI * 2 : 0;
   const sw = switchT > 0 ? Math.sin(Math.PI * (1 - switchT / .42)) : 0;
   const a = ads, hip = w.hip, port = vw < vh ? .78 : 1, free = 1 - a * .75;
   gun.position.set(
-    lerp(hip[0] * port, 0, a) - swayV.x * free + Math.cos(bobT * .5) * .006 * mv * free,
-    lerp(hip[1], -P.sightY, a) + swayV.y * free + Math.sin(bobT) * .006 * mv * free - tilt * .05 + lift * .012 - sgTilt * .03 - sw * .3 + kick * .008 * w.gk,
-    lerp(hip[2], hip[2] - .1, a) + kick * .055 * w.gk * (1 - a * .4));
-  gun.rotation.set(kick * .16 * w.gk * (1 - a * .6) + tilt * .3 + sgTilt * .4 + (w.shells ? cyc * .05 : 0) - sw * .7, swayV.x * 1.5 * free, tilt * .6 + sgTilt * .4 + (w.scope ? cyc * .14 : 0));
+    lerp(hip[0] * port, 0, a) - swayV.x * free + Math.cos(bobT * .5) * .006 * mv * free + flick * .03 - tilt * .03,
+    lerp(hip[1], -P.sightY, a) + swayV.y * free + Math.sin(bobT) * .006 * mv * free + tilt * .03 + lift * .014 - sgTilt * .02 - sw * .3 + kick * .008 * w.gk + Math.sin(spin / 2) * .03 + Math.sin(fl / 2) * .05,
+    lerp(hip[2], w.adsZ, a) + kick * .05 * w.gk * (1 - a * .4));
+  gun.rotation.set(kick * .16 * w.gk * (1 - a * .6) + tilt * .42 + sgTilt * .4 + (w.shells && !flip ? cyc * .05 : 0) - sw * .7 + spin - fl,
+    swayV.x * 1.5 * free - tilt * .25, tilt * .85 - flick * .55 + sgTilt * .4 + (w.scope ? cyc * .14 : 0));
   P.rack.position.z = P.rackZ + Math.max(w.cycle ? cyc : Math.min(1, kick * 1.6), rackR) * P.travel;
-  if (P.mag) P.mag.position.set(P.magBase.x + P.magDir[0] * magOff * .3, P.magBase.y + P.magDir[1] * magOff * .3, P.magBase.z + P.magDir[2] * magOff * .3);
-  if (P.shell) { P.shell.visible = shellP >= 0 && shellP < .6; P.shell.position.y = lerp(-.17, -.055, ss(seg(.05, .55, shellP))); }
+  if (P.mag) { P.mag.position.set(P.magBase.x + mx, P.magBase.y + my, P.magBase.z + mz); P.mag.rotation.set(mrot, 0, mrot * .35); }
+  if (P.shell) {
+    const e = ss(seg(.02, .55, shellP)), k = 1 - e; P.shell.visible = shellP >= 0 && shellP < .6;
+    P.shell.position.set(-.09 * k, -.03 - .3 * k * k, -.03 + .06 * k); P.shell.rotation.set(HP + k * 9, 0, k * 4);
+  }
+  torch.position.z = lerp(-.12, -.5, a); torch.position.y = lerp(-.1, -.06, a);
   const scoped = w.scope ? smooth(.8, 1, a) : 0; gun.visible = scoped < .5;
   // 視野與 UI
   const fov = lerp(baseFov, w.adsFov * (vw < vh ? 1.25 : 1), a);
@@ -1530,7 +1682,7 @@ function updatePlayer(dt) {
 }
 function frame() {
   requestAnimationFrame(frame);
-  const dt = Math.min(.05, clock.getDelta()), t = clock.elapsedTime;
+  const dt = Math.min(.05, clock.getDelta()) * timeScale, t = clock.elapsedTime;
   for (const l of lamps) { l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7; }
 
   if (state === 'play') {
@@ -1557,7 +1709,7 @@ function frame() {
 
   if (flashT > 0) { flashT -= dt; if (flashT <= 0) flash.visible = false; }
   muzzleLight.intensity *= Math.exp(-dt * 28);
-  updateSpits(dt); updatePickups(dt, t);
+  updateSpits(dt); updatePickups(dt, t); updateDebris(dt);
   const bp = bossE && !bossE.dead ? Math.ceil(clamp(bossE.hp / bossE.maxHp, 0, 1) * 100) : -1;
   if (bp !== lastBoss) { lastBoss = bp; $('bossbar').style.opacity = bp < 0 ? 0 : 1; $('bossbar').firstChild.style.width = Math.max(0, bp) + '%'; }
   sparks.update(dt); blood.update(dt); smoke.update(dt);
@@ -1571,7 +1723,7 @@ function frame() {
   composer.render(dt);
 
   // 動態解析度：維持流暢
-  fpsAcc += dt; fpsN++;
+  fpsAcc += dt / timeScale; fpsN++;
   if (fpsAcc > 2) {
     const fps = fpsN / fpsAcc; fpsAcc = fpsN = 0;
     if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); resize(); if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
@@ -1581,7 +1733,7 @@ function frame() {
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 qBase.identity(); setWeapon(0);
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
