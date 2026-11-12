@@ -510,7 +510,7 @@ for (const s of [-1, 1]) {
 
 // 槍燈（手電筒）：主要光源，會投射怪物的影子
 const torch = new THREE.SpotLight(0xe6ecff, 9, 42, .54, .55, .5);
-torch.position.set(.17, -.24, -.72); camera.add(torch); camera.add(torch.target); torch.target.position.set(.03, -.03, -6);
+torch.position.set(.07, -.1, -.12); camera.add(torch); camera.add(torch.target); torch.target.position.set(.01, -.02, -6);
 torch.castShadow = true; torch.shadow.mapSize.set(512, 512); torch.shadow.camera.near = .3; torch.shadow.camera.far = 30; torch.shadow.bias = -.002;
 // 槍口火光
 const muzzleLight = new THREE.PointLight(0xffa64a, 0, 11, 2); camera.add(muzzleLight); muzzleLight.position.set(.16, -.1, -.75);
@@ -837,17 +837,173 @@ function hud() {
   $('ammo').classList.toggle('low', cur.ammo <= Math.ceil(cur.mag * .25));
 }
 
+/* ───────────────────────── 喪屍模型（程序化雕塑 + 骨架蒙皮） ─────────────────────────
+   以有號距離場 (SDF) 混合出人體，Surface Nets 轉為網格，再依骨頭距離計算蒙皮權重。 */
+const sdCap = (p, a, b, ra, rb) => {
+  const px = p[0] - a[0], py = p[1] - a[1], pz = p[2] - a[2], bx = b[0] - a[0], by = b[1] - a[1], bz = b[2] - a[2];
+  const h = clamp((px * bx + py * by + pz * bz) / (bx * bx + by * by + bz * bz), 0, 1);
+  return Math.hypot(px - bx * h, py - by * h, pz - bz * h) - (ra + (rb - ra) * h);
+};
+const sdEll = (p, c, r) => (Math.hypot((p[0] - c[0]) / r[0], (p[1] - c[1]) / r[1], (p[2] - c[2]) / r[2]) - 1) * Math.min(r[0], r[1], r[2]);
+const sdSph = (p, x, y, z, r) => Math.hypot(p[0] - x, p[1] - y, p[2] - z) - r;
+const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; return Math.min(a, b) - h * h * k * .25; };
+const smax = (a, b, k) => -smin(-a, -b, k);
+const shX = g => .17 * g + .045;      // 肩關節 x
+
+function bodySDF(p, G) {
+  const g = G.g, q = [Math.abs(p[0]), p[1], p[2]], sh = shX(g);
+  let d = sdEll(p, [0, .99, 0], [.15 * g, .11, .105 * g]);                                   // 骨盆
+  d = smin(d, sdCap(p, [0, 1.04, .005], [0, 1.2, 0], .098 * g, .102 * g), .05);              // 腹
+  d = smin(d, sdEll(p, [0, 1.33, -.005], [.165 * g, .16, .11 * g]), .05);                    // 胸廓
+  if (G.belly) d = smin(d, sdEll(p, [0, 1.13, .05], [.15 * g, .16, .16 * G.belly]), .06);    // 鼓脹的肚子
+  d = smin(d, sdCap(q, [0, 1.445, -.01], [.17 * g, 1.44, -.01], .055, .05), .04);            // 肩
+  d = smin(d, sdCap(p, [0, 1.45, -.01], [0, 1.58, .012], .05 * g, .045 * g), .03);           // 頸
+  d = smin(d, sdCap(q, [sh, 1.43, -.01], [sh + .02, 1.15, -.005], .047 * g, .037 * g), .03); // 上臂
+  d = smin(d, sdCap(q, [sh + .02, 1.15, -.005], [sh + .031, .9, .02], .036 * g, .026 * g), .015);
+  d = smin(d, sdCap(q, [.095, .93, 0], [.105, .5, .012], .078 * g, .052 * g), .04);          // 大腿
+  d = smin(d, sdCap(q, [.105, .5, .012], [.105, .09, -.012], .05 * g, .034 * g), .02);       // 小腿
+  d = smin(d, sdEll(q, [.105, .33, -.03], [.045 * g, .11, .05 * g]), .03);
+  d = smin(d, Math.max(sdCap(q, [.105, .045, -.03], [.112, .032, .13], .045, .035), -p[1]), .03);   // 腳掌
+  if (!G.belly) d -= .0045 * Math.sin(p[1] * 85) * smooth(1.2, 1.26, p[1]) * smooth(1.42, 1.36, p[1]) * smooth(.02, .08, q[0]) * smooth(.17 * g, .14 * g, q[0]);   // 肋骨
+  d = smax(d, -sdSph(p, .14 * g, 1.19, .07 * g, .05), .015);                                  // 側腹被咬掉一塊
+  d = smax(d, -sdSph(p, -.11, .7, .06, .035), .012);                                           // 大腿傷口
+  return d;
+}
+const teethD = p => Math.min(sdEll(p, [0, 1.582, .082], [.022, .0055, .014]), sdEll(p, [0, 1.5625, .078], [.02, .005, .013]));
+function headSDF(p) {
+  const q = [Math.abs(p[0]), p[1], p[2]];
+  let d = sdEll(p, [0, 1.665, -.005], [.076, .092, .094]);                    // 顱
+  d = smin(d, sdEll(p, [0, 1.6, .03], [.06, .082, .068]), .03);               // 臉
+  d = smin(d, sdEll(p, [0, 1.553, .038], [.046, .03, .05]), .025);            // 下顎
+  d = smin(d, sdCap(q, [0, 1.672, .078], [.046, 1.668, .066], .011, .01), .012);   // 眉骨
+  d = smin(d, sdCap(p, [0, 1.655, .09], [0, 1.622, .104], .008, .011), .01);  // 鼻
+  d = smin(d, sdEll(q, [.079, 1.63, -.005], [.008, .024, .015]), .008);       // 耳
+  d = smin(d, sdCap(p, [0, 1.48, -.012], [0, 1.58, .008], .049, .046), .03);  // 頸
+  d = smax(d, -sdSph(q, .031, 1.643, .079, .018), .008);                      // 眼窩
+  d = smax(d, -sdSph(q, .05, 1.595, .062, .022), .02);                        // 凹陷的臉頰
+  d = smax(d, -sdEll(p, [0, 1.572, .088], [.028, .013, .03]), .006);          // 張開的嘴
+  d = smax(d, -sdSph(q, .007, 1.616, .108, .006), .004);                      // 鼻孔
+  return Math.min(d, teethD(p));
+}
+function handSDF(p) {     // 右手（+x），手指內彎成爪
+  let d = sdCap(p, [.244, .95, .014], [.246, .89, .02], .027, .024);
+  d = smin(d, sdEll(p, [.247, .855, .026], [.017, .042, .036]), .015);
+  for (let i = 0; i < 4; i++) {
+    const z = -.004 + i * .0185, l = i === 1 || i === 2 ? 1 : .85;
+    d = smin(d, sdCap(p, [.247, .825, z], [.243, .825 - .04 * l, z + .012], .0085, .0075), .006);
+    d = smin(d, sdCap(p, [.243, .825 - .04 * l, z + .012], [.232, .825 - .07 * l, z + .03], .0075, .006), .004);
+  }
+  return smin(d, sdCap(p, [.245, .87, .055], [.236, .83, .078], .0095, .007), .008);
+}
+// Surface Nets：每個跨越表面的格子放一個頂點，再沿變號的格線連成四邊形
+function surfaceNets(sdf, mn, mx, cell) {
+  const nx = Math.ceil((mx[0] - mn[0]) / cell) + 1, ny = Math.ceil((mx[1] - mn[1]) / cell) + 1, nz = Math.ceil((mx[2] - mn[2]) / cell) + 1;
+  const val = new Float32Array(nx * ny * nz), vid = new Int32Array(nx * ny * nz).fill(-1), p = [0, 0, 0], pos = [], idx = [];
+  for (let z = 0, i = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++, i++) { p[0] = mn[0] + x * cell; p[1] = mn[1] + y * cell; p[2] = mn[2] + z * cell; val[i] = sdf(p); }
+  const S = [1, nx, nx * ny], C = [0, 1, nx, nx + 1, S[2], S[2] + 1, S[2] + nx, S[2] + nx + 1], E = [0, 1, 2, 3, 4, 5, 6, 7, 0, 2, 1, 3, 4, 6, 5, 7, 0, 4, 1, 5, 2, 6, 3, 7];
+  for (let z = 0; z < nz - 1; z++) for (let y = 0; y < ny - 1; y++) for (let x = 0; x < nx - 1; x++) {
+    const i = x + y * nx + z * S[2]; let n = 0, sx = 0, sy = 0, sz = 0;
+    for (let e = 0; e < 24; e += 2) {
+      const a = E[e], b = E[e + 1], va = val[i + C[a]], vb = val[i + C[b]]; if ((va < 0) === (vb < 0)) continue;
+      const t = va / (va - vb); n++;
+      sx += (a & 1) + ((b & 1) - (a & 1)) * t; sy += (a >> 1 & 1) + ((b >> 1 & 1) - (a >> 1 & 1)) * t; sz += (a >> 2) + ((b >> 2) - (a >> 2)) * t;
+    }
+    if (!n) continue; vid[i] = pos.length / 3; pos.push(mn[0] + (x + sx / n) * cell, mn[1] + (y + sy / n) * cell, mn[2] + (z + sz / n) * cell);
+  }
+  for (let z = 1; z < nz - 1; z++) for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) {
+    const i = x + y * nx + z * S[2], a = val[i] < 0;
+    for (let d = 0; d < 3; d++) {
+      if (a === (val[i + S[d]] < 0)) continue;
+      const u = S[(d + 1) % 3], v = S[(d + 2) % 3], c0 = vid[i], c1 = vid[i - u], c2 = vid[i - u - v], c3 = vid[i - v];
+      if (c0 < 0 || c1 < 0 || c2 < 0 || c3 < 0) continue;
+      if (a) idx.push(c0, c1, c2, c0, c2, c3); else idx.push(c0, c3, c2, c0, c2, c1);
+    }
+  }
+  return { pos, idx };
+}
+// 骨架：0 髖 1 軀幹 2 頭 3/4 右上臂/前臂(−x) 5/6 另一側 7/8 大腿/小腿 9/10 另一側
+const ZPAR = [-1, 0, 1, 1, 3, 1, 5, 0, 7, 0, 9], ZADJ = [[0, 1], [1, 2], [1, 3], [3, 4], [1, 5], [5, 6], [0, 7], [7, 8], [0, 9], [9, 10]];
+const zn = makeNoise(77), lin = c => Math.pow(clamp(c, 0, 1), 2.2);
+function buildZombie(G) {
+  const g = G.g, sh = shX(g), P = [], Nn = [], Cc = [], SI = [], SW = [], IX = [];
+  const segs = [[0, [0, .93, 0], [0, 1, 0], .13], [1, [0, 1.06, 0], [0, 1.42, 0], .14], [1, [-.15 * g, 1.44, 0], [.15 * g, 1.44, 0], .07], [2, [0, 1.54, 0], [0, 1.7, 0], .07]];
+  for (const s of [-1, 1]) {
+    const a = s < 0 ? 3 : 5, l = s < 0 ? 7 : 9;
+    segs.push([a, [s * sh, 1.43, 0], [s * (sh + .02), 1.17, 0], .047], [a + 1, [s * (sh + .02), 1.13, 0], [s * (sh + .031), .82, .02], .035],
+      [l, [s * .095, .9, 0], [s * .105, .52, .012], .07], [l + 1, [s * .105, .48, .012], [s * .105, .06, 0], .045], [l + 1, [s * .105, .04, -.02], [s * .11, .03, .12], .04]);
+  }
+  const sc = new Float32Array(11);
+  function add(sdf, mn, mx, cell, part, mirror, dx) {
+    const m = surfaceNets(sdf, mn, mx, cell), base = P.length / 3, e = .004, n = [0, 0, 0], q = [0, 0, 0];
+    for (let i = 0; i < m.pos.length; i += 3) {
+      const p = [m.pos[i], m.pos[i + 1], m.pos[i + 2]];
+      const f = (x, y, z) => { q[0] = p[0] + x; q[1] = p[1] + y; q[2] = p[2] + z; return sdf(q); };
+      n[0] = f(e, 0, 0) - f(-e, 0, 0); n[1] = f(0, e, 0) - f(0, -e, 0); n[2] = f(0, 0, e) - f(0, 0, -e);
+      const nl = Math.hypot(n[0], n[1], n[2]) || 1; n[0] /= nl; n[1] /= nl; n[2] /= nl;
+      // 顏色：蒼白屍斑皮膚、破爛衣褲、血跡、凹處壓暗
+      const N1 = zn.fbm(p[0] * .9 + p[2] * .7 + 3.1, p[1] * .9 + p[2] * .3 + 1.7, 6, 3), N2 = zn.fbm(p[0] * 1.3 - p[2] * .8 + 9.2, p[1] * 1.1 + 7.7, 14, 2);
+      const N3 = zn.fbm(p[0] * 1.1 + 2.2, p[1] * .8 + p[2] + 4.4, 5, 2), ax = Math.abs(p[0]), y = p[1];
+      let r = .5, gg = .52, b = .45, bl = 0; const br = smooth(.5, .75, N1) * .7;
+      r += (.36 - r) * br; gg += (.34 - gg) * br; b += (.38 - b) * br; r += (N2 - .5) * .1; gg += (N2 - .5) * .1; b += (N2 - .5) * .09;
+      if (part === 0) {
+        if (y < 1.07 && y > .13 + N1 * .22 && N2 < .74) { r = .1 + N2 * .07; gg = .12 + N2 * .07; b = .16 + N2 * .08; }                 // 褲子（下襬破爛）
+        else if (y > 1.02 && y < 1.5 && ax < sh - .03 && N1 < .6) { r = .24 + N2 * .12; gg = .23 + N2 * .11; b = .2 + N2 * .09; }         // 襯衫殘片
+        bl = Math.max(smooth(.66, .82, N3) * .8, smooth(.085, .05, Math.hypot(p[0] - .14 * g, y - 1.19, p[2] - .07 * g)), smooth(.06, .035, Math.hypot(p[0] + .11, y - .7, p[2] - .06)));
+        if (p[2] > 0 && y > 1.15) bl = Math.max(bl, smooth(.4, .62, N2 + (y - 1.36) * 1.2) * smooth(.085, .02, ax + (1.5 - y) * .12) * .75);                             // 從嘴滴到胸口
+        if (y < .14) bl = Math.max(bl, .35);
+      } else if (part === 1) {
+        if (y > 1.7 && N2 > .5) { r = gg = b = .1; }                                                                                      // 殘存的頭髮
+        bl = smooth(.08, .03, Math.hypot(p[0], (y - 1.572) * 1.3, p[2] - .085)) * .9;
+        bl = Math.max(bl, smooth(.64, .82, N3) * .6);
+        if (teethD(p) < .003) { r = .8; gg = .74; b = .56; bl = .15; }
+      } else bl = smooth(.9, .8, y) * .9;                                                                                                 // 沾血的手
+      r += (.2 - r) * bl; gg += (.02 - gg) * bl; b += (.018 - b) * bl;
+      const ao = clamp(.3 + .7 * f(n[0] * .03, n[1] * .03, n[2] * .03) / .03, .25, 1);
+      // 蒙皮權重：取「距離/骨頭粗細」最小的骨頭，並與其相鄰骨頭混合
+      const X = (mirror ? -1 : 1) * p[0] + dx * (mirror ? -1 : 1);
+      let b1 = 2, b2 = 1, w2 = 0;
+      if (part === 1) w2 = 1 - smooth(1.49, 1.55, y);
+      else {
+        sc.fill(1e9); const pp = [X, y, p[2]];
+        for (const s of segs) { const v = (sdCap(pp, s[1], s[2], 0, 0)) / s[3]; if (v < sc[s[0]]) sc[s[0]] = v; }
+        b1 = 0; for (let k = 1; k < 11; k++) if (sc[k] < sc[b1]) b1 = k;
+        if (part === 2) b1 = X < 0 ? 4 : 6;
+        let s2 = 1e9; for (const [u, v] of ZADJ) { const o = u === b1 ? v : v === b1 ? u : -1; if (o >= 0 && sc[o] < s2) { s2 = sc[o]; b2 = o; } }
+        w2 = part === 2 ? 0 : clamp(.5 - (s2 - sc[b1]) * 1.3, 0, .5);
+      }
+      P.push(X, y, p[2]); Nn.push(mirror ? -n[0] : n[0], n[1], n[2]); Cc.push(lin(r) * ao, lin(gg) * ao, lin(b) * ao);
+      SI.push(b1, b2, 0, 0); SW.push(1 - w2, w2, 0, 0);
+    }
+    for (let i = 0; i < m.idx.length; i += 3) IX.push(base + m.idx[i], base + m.idx[i + (mirror ? 2 : 1)], base + m.idx[i + (mirror ? 1 : 2)]);
+  }
+  const Q = IS_TOUCH ? 1.2 : 1;
+  add(p => bodySDF(p, G), [-(sh + .13), -.03, -.19 * g], [sh + .13, 1.6, .16 * g + (G.belly ? .16 : .04)], .0275 * Q, 0, false, 0);
+  add(headSDF, [-.1, 1.465, -.115], [.1, 1.775, .125], .0118 * Q, 1, false, 0);
+  add(handSDF, [.2, .735, -.03], [.29, .975, .1], .0096 * Q, 2, false, sh - .215);
+  add(handSDF, [.2, .735, -.03], [.29, .975, .1], .0096 * Q, 2, true, sh - .215);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
+  geo.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
+  geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4)); geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(SW, 4));
+  geo.setIndex(IX);
+  const pivots = [[0, .95, 0], [0, 1, 0], [0, 1.5, 0], [-sh, 1.43, -.01], [-(sh + .02), 1.15, -.005], [sh, 1.43, -.01], [sh + .02, 1.15, -.005],
+    [-.095, .93, 0], [-.105, .5, .012], [.095, .93, 0], [.105, .5, .012]];
+  const hb = (b, w, h, d, cx, cy, cz, head) => ({ b, geo: B(w, h, d), c: [cx, cy, cz], head: !!head });   // 隱形命中框（掛在骨頭上）
+  const hit = [hb(0, .34 * g, .16, .24 * g, 0, .02, 0), hb(1, .4 * g, .52, .27 * g + (G.belly ? .1 : 0), 0, .26, G.belly ? .04 : 0), hb(2, .19, .27, .23, 0, .14, .01, 1)];
+  for (const k of [3, 5]) hit.push(hb(k, .11 * g, .3, .11 * g, 0, -.14, 0), hb(k + 1, .1 * g, .4, .11 * g, 0, -.19, .01));
+  for (const k of [7, 9]) hit.push(hb(k, .17 * g, .44, .18 * g, 0, -.21, 0), hb(k + 1, .13 * g, .5, .16 * g, 0, -.25, .01));
+  return { geo, pivots, hit, inv: pivots.map(p => new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2])), tris: IX.length / 3 };
+}
+const ZB = { normal: buildZombie({ g: 1 }), thin: buildZombie({ g: .86 }), fat: buildZombie({ g: 1.1, belly: 1.25 }), bulk: buildZombie({ g: 1.28, belly: .8 }) };
+const hitMat = new THREE.MeshBasicMaterial({ visible: false }), IDENT = new THREE.Matrix4(), eyeGeo = new THREE.SphereGeometry(.0105, 8, 6);
+
 /* ───────────────────────── 怪物 ───────────────────────── */
 const TYPES = {
-  walker: { hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [3.2, .25, .1], lean: .35, score: 100 },
-  runner: { hp: 2.5, speed: 3.3, scale: .86, dmg: 7, skin: 0x6b5a4c, eye: [3, 2.2, .2], lean: .75, score: 150 },
-  brute: { hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [3.4, 1, .1], lean: .25, score: 400 },
-  spitter: { hp: 3, speed: 1.7, scale: .95, dmg: 9, skin: 0x3f5a3a, eye: [.4, 3.2, .5], lean: .55, score: 200, spit: true },   // 遠距離吐酸液
-  boss: { hp: 70, speed: 1.3, scale: 1.65, dmg: 30, skin: 0x2a2226, eye: [2.6, 2.8, 3.6], lean: .4, score: 2000, boss: true }
-};
-const eGeo = {
-  leg: B(.15, .85, .15).translate(0, -.425, 0), torso: B(.48, .64, .27).translate(0, .32, 0), arm: B(.105, .74, .105).translate(0, -.37, 0),
-  head: new THREE.IcosahedronGeometry(.165, 0), eye: B(.045, .028, .02), jaw: B(.14, .05, .1)
+  walker: { build: 'normal', tint: [1, 1, 1], hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [1.76, 0.14, 0.06], lean: .35, score: 100 },
+  runner: { build: 'thin', tint: [1.08, .85, .8], hp: 2.5, speed: 3.3, scale: .86, dmg: 7, skin: 0x6b5a4c, eye: [1.65, 1.21, 0.11], lean: .75, score: 150 },
+  brute: { build: 'bulk', tint: [.8, .86, .98], hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [1.87, 0.55, 0.06], lean: .25, score: 400 },
+  spitter: { build: 'fat', tint: [.72, 1.08, .68], hp: 3, speed: 1.7, scale: .95, dmg: 9, skin: 0x3f5a3a, eye: [0.22, 1.76, 0.28], lean: .55, score: 200, spit: true },   // 遠距離吐酸液
+  boss: { build: 'bulk', tint: [.5, .45, .58], hp: 70, speed: 1.3, scale: 1.65, dmg: 30, skin: 0x2a2226, eye: [1.43, 1.54, 1.98], lean: .4, score: 2000, boss: true }
 };
 const SPAWNS = [
   { sx: 0, sz: -D / 2 - 6, wx: 0, wz: -D / 2 + 1.4 }, { sx: 0, sz: D / 2 + 6, wx: 0, wz: D / 2 - 1.4 },
@@ -858,19 +1014,24 @@ function spawnEnemy(force) {
   // 優先從玩家看不到/較遠的門湧出
   const sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s;
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
-  const mat = new THREE.MeshStandardMaterial({ color: T.skin, roughness: .62, flatShading: true });
+  const Z = ZB[T.build], v = () => rand(.88, 1.06);
+  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72, color: new THREE.Color(T.tint[0] * v(), T.tint[1] * v(), T.tint[2] * v()) });
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
     ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
   e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(.7); setTimeout(() => sfx.growl(.6), 350); }
-  const mk = (geo, parent, x, y, z, head) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.castShadow = true; m.userData.e = e; m.userData.head = !!head; parent.add(m); e.meshes.push(m); return m; };
-  e.legL = mk(eGeo.leg, body, -.13, .85, 0); e.legR = mk(eGeo.leg, body, .13, .85, 0);
-  e.torso = mk(eGeo.torso, body, 0, .83, 0); e.torso.rotation.x = T.lean;
-  e.armL = mk(eGeo.arm, e.torso, -.3, .56, 0); e.armR = mk(eGeo.arm, e.torso, .3, .56, 0);
-  e.head = mk(eGeo.head, e.torso, 0, .78, .04, true); e.head.scale.set(1, 1.15, 1.05); e.head.rotation.x = -T.lean * .8;
-  mk(eGeo.jaw, e.head, 0, -.13, .07, true);
-  for (const sx of [-.06, .06]) { const m = new THREE.Mesh(eGeo.eye, eyeMat); m.position.set(sx, .02, .145); e.head.add(m); }
-  root.scale.setScalar(T.scale); if (tn === 'brute' || T.boss) { e.torso.scale.set(1.25, 1, 1.3); } if (tn === 'runner') { e.torso.scale.set(.85, 1, .85); }
+  const bones = Z.pivots.map(() => new THREE.Bone());
+  Z.pivots.forEach((pv, i) => {
+    const par = ZPAR[i], pp = par < 0 ? [0, 0, 0] : Z.pivots[par];
+    bones[i].position.set(pv[0] - pp[0], pv[1] - pp[1], pv[2] - pp[2]); (par < 0 ? body : bones[par]).add(bones[i]);
+  });
+  const skin = new THREE.SkinnedMesh(Z.geo, mat); skin.castShadow = true; skin.frustumCulled = false; body.add(skin);
+  e.skel = new THREE.Skeleton(bones, Z.inv); skin.bind(e.skel, IDENT);
+  for (const h of Z.hit) { const m = new THREE.Mesh(h.geo, hitMat); m.position.set(h.c[0], h.c[1], h.c[2]); m.userData.e = e; m.userData.head = h.head; bones[h.b].add(m); e.meshes.push(m); }
+  [e.hips, e.torso, e.head, e.armL, e.foreL, e.armR, e.foreR, e.legL, e.shinL, e.legR, e.shinR] = bones;
+  e.torso.rotation.x = T.lean; e.head.rotation.x = -T.lean * .8; e.side = Math.random() < .5 ? -1 : 1;
+  for (const sx of [-.031, .031]) { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(sx, .143, .071); e.head.add(m); }
+  root.scale.setScalar(T.scale);
   root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
   if (Math.random() < .5) sfx.growl(.22);
 }
@@ -887,7 +1048,7 @@ function killEnemy(e, headshot, dir) {
   const p = pools[poolI++ % pools.length]; p.visible = true; p.position.set(e.x + dir.x * .9, .012 + (poolI % 12) * .0006, e.z + dir.z * .9); p.scale.setScalar(.15); p.userData.g = rand(.7, 1.25) * e.T.scale; p.rotation.y = rand(6);
   hud();
 }
-function removeEnemy(e) { scene.remove(e.root); e.mat.dispose(); e.eyeMat.dispose(); enemies.splice(enemies.indexOf(e), 1); }
+function removeEnemy(e) { scene.remove(e.root); e.skel.dispose(); e.mat.dispose(); e.eyeMat.dispose(); enemies.splice(enemies.indexOf(e), 1); }
 
 function updateEnemies(dt, t) {
   let alive = 0;
@@ -896,7 +1057,9 @@ function updateEnemies(dt, t) {
     if (e.flash > 0) { e.flash = Math.max(0, e.flash - dt * 6); e.mat.emissive.setRGB(e.flash * .22, e.flash * .03, e.flash * .02); }
     if (e.dead) {
       e.deadT += dt; const k = Math.min(1, e.deadT / .5);
-      e.body.rotation.x = -k * k * Math.PI / 2; e.body.position.y = k * .14;
+      e.body.rotation.x = -k * k * Math.PI / 2; e.body.position.y = k * .11; const q = Math.min(1, dt * 5);
+      e.armL.rotation.x += (-.5 - e.armL.rotation.x) * q; e.armR.rotation.x += (-2.95 - e.armR.rotation.x) * q; e.armL.rotation.z += (-.7 - e.armL.rotation.z) * q; e.armR.rotation.z += (.5 - e.armR.rotation.z) * q;
+      e.legL.rotation.x += (.25 - e.legL.rotation.x) * q; e.legR.rotation.x += (-.5 - e.legR.rotation.x) * q; e.shinR.rotation.x += (.9 - e.shinR.rotation.x) * q; e.head.rotation.y += (e.side * .7 - e.head.rotation.y) * q;
       e.x += e.kx * dt; e.z += e.kz * dt; e.kx *= Math.exp(-dt * 5); e.kz *= Math.exp(-dt * 5);
       if (e.deadT > 5) e.root.position.y -= dt * .25;
       e.root.position.x = e.x; e.root.position.z = e.z;
@@ -933,15 +1096,17 @@ function updateEnemies(dt, t) {
     let dr = Math.atan2(dx, dz) - e.rot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); e.rot += dr * Math.min(1, dt * 7);
     e.root.position.set(e.x, 0, e.z); e.root.rotation.y = e.rot;
     e.ph += dt * sp * 3.4 / e.T.scale; const s = Math.sin(e.ph);
-    e.legL.rotation.x = s * .65; e.legR.rotation.x = -s * .65;
-    e.body.position.y = Math.abs(Math.cos(e.ph)) * .04; e.torso.rotation.z = s * .07; e.head.rotation.z = Math.sin(t * 2.3 + e.ph) * .12;
+    e.legL.rotation.x = s * .6; e.legR.rotation.x = -s * .6;
+    const cph = Math.cos(e.ph); e.shinL.rotation.x = Math.max(0, -cph) * .95 + .08; e.shinR.rotation.x = Math.max(0, cph) * .95 + .08;     // 膝蓋彎曲
+    e.body.position.y = Math.abs(cph) * .035; e.torso.rotation.z = s * .07; e.torso.rotation.y = s * .12; e.head.rotation.z = Math.sin(t * 2.3 + e.ph) * .14 + e.side * .12; e.head.rotation.y = Math.sin(t * 1.1 + e.ph * .3) * .2;
     let reach = -1.25 + e.T.lean * .3;
     if (inRange) {
       e.atk += dt;
       if (e.atk > 0) reach -= Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .9;
       if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
     } else e.atk = Math.min(e.atk, -.15);
-    e.armL.rotation.x = reach + s * .18; e.armR.rotation.x = reach - s * .18;
+    e.armL.rotation.x = reach + s * .18; e.armR.rotation.x = reach * (.8 + e.side * .15) - s * .18;
+    e.foreL.rotation.x = -.5 + s * .12; e.foreR.rotation.x = -.3 - s * .12; e.armL.rotation.z = .12; e.armR.rotation.z = -.12;
     e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
   }
   return alive;
@@ -1332,12 +1497,13 @@ function frame() {
   if (fpsAcc > 2) {
     const fps = fpsN / fpsAcc; fpsAcc = fpsN = 0;
     if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); resize(); if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
+    else if (fps < 30 && lamps[0].light.castShadow) lamps[0].light.castShadow = false;      // 仍然吃力就關掉掛燈陰影
     else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); resize(); }
   }
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 qBase.identity(); setWeapon(0);
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
