@@ -98,6 +98,8 @@
   #cMsg{margin-top:16px;font-size:13px;color:#ffb3a6;min-height:1.4em}
   #cPad{flex:1;display:none;flex-direction:column;min-height:0}
   #cNet{font-size:10px;padding:2px 6px;border:1px solid rgba(216,210,196,.35);border-radius:3px;opacity:.7;letter-spacing:.05em}
+  #cSens{display:flex;align-items:center;justify-content:center;gap:10px;padding:0 12px 10px;font-size:12px;letter-spacing:.15em}
+  #cSens span{opacity:.6}#cSens .cb{flex:0 0 56px;padding:8px 0}#cSv{min-width:36px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
   #cTop{display:flex;align-items:center;gap:12px;padding:12px 16px;font-size:14px;letter-spacing:.12em}
   #cA{font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
   #cHp{flex:1;height:8px;border:1px solid rgba(216,210,196,.45)}#cHp i{display:block;height:100%;width:100%;background:#b93a2c}
@@ -233,6 +235,7 @@ window.B2 = {
       <button id="cGo">連線並啟用陀螺儀</button><div id="cMsg"></div></div>
     <div id="cPad">
       <div id="cTop"><span id="cNet"></span><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
+      <div id="cSens"><span>靈敏度</span><div class="cb" data-k="s-">－</div><b id="cSv">1.0</b><div class="cb" data-k="s+">＋</div></div>
       <div id="cSwipe"><button id="cStart">開始遊戲</button><div id="cPerks"></div><span>指向螢幕邊緣會自動轉身 · 在這裡滑動可快速轉身<br>準星偏掉時：把手機指向螢幕正中央再按「回正」</span></div>
       <div id="cRow"><div class="cb" data-k="ads">開鏡</div><div class="cb" data-k="reload">換彈</div><div class="cb" data-k="next">換槍</div><div class="cb" data-k="center">回正</div></div>
       <div id="cBottom"><div id="cStick"><div id="cKnob"></div></div><div id="cFire">射擊</div></div>
@@ -268,6 +271,7 @@ window.B2 = {
     if (!d) return; link();
     if (d.t === 'v') { if (navigator.vibrate) navigator.vibrate(d.ms); }
     else if (d.t === 'h') {
+      if (d.s) $('#cSv').textContent = (+d.s).toFixed(1);
       $('#cW').textContent = d.w; $('#cA').textContent = (d.r ? '換彈中' : d.a + ' / ' + d.m); $('#cHp i').style.width = d.hp + '%';
       const b = $('#cStart'); b.style.display = d.st === 'play' || d.st === 'perk' ? 'none' : ''; b.textContent = d.st === 'dead' ? '再來一次' : '開始遊戲';
       const key = d.pk ? JSON.stringify(d.pk) : ''; if (key !== pkKey) {
@@ -315,7 +319,8 @@ window.B2 = {
   $('#cSwipe').addEventListener('touchmove', x => { x.preventDefault(); const t = x.targetTouches[0]; if (!t || !sw) return; dragY -= (t.clientX - sw.x) * .007; dragP -= (t.clientY - sw.y) * .005; sw = { x: t.clientX, y: t.clientY }; }, { passive: false });
   el.querySelectorAll('.cb').forEach(b => b.addEventListener('touchstart', x => {
     x.preventDefault(); const k = b.dataset.k;
-    if (k === 'ads') { st.a ^= 1; b.classList.toggle('act', !!st.a); } else if (k === 'center') center(); else send({ t: 'e', k });
+    if (k === 'ads') { st.a ^= 1; b.classList.toggle('act', !!st.a); } else if (k === 'center') center();
+    else if (k === 's-' || k === 's+') send({ t: 'e', k: 'sens', d: k === 's+' ? .1 : -.1 }); else send({ t: 'e', k });
   }, { passive: false }));
   $('#cStart').onclick = () => { center(); send({ t: 'e', k: 'start' }); };
 })();
@@ -731,7 +736,7 @@ const sfx = {
 
 /* ───────────────────────── 操控 ───────────────────────── */
 const input = { mx: 0, my: 0, fire: false, ads: false, keys: {} };
-const AIMX = .7, AIMY = .62;             // 準星最遠能離開畫面中央多遠（佔半個畫面的比例），不必頂到螢幕邊緣
+const AIMX = .4, AIMY = .36;             // 準星最遠能離開畫面中央多遠（佔半個畫面的比例），不必頂到螢幕邊緣
 let aimU = 0, aimV = 0, lastAim = '';     // 準星在畫面上的位置（-1..1），只有手機遙控器模式會離開中央
 let yaw = 0, pitch = 0, useGyro = false, gyroOK = false, gyroYawOff = 0, needCalib = false;
 const ori = { a: 0, b: 0, g: 0, has: false };
@@ -1518,7 +1523,7 @@ const setPair = t => $('pairMsg').textContent = t;
 const p2pOpen = () => !!(remote.conn && remote.conn.open) && performance.now() - remote.p2pAt < 3500;
 const remoteLive = () => performance.now() - remote.heardAt < 3500;
 function remoteSend(d) { try { if (p2pOpen()) remote.conn.send(d); else if (remote.relay) remote.relay.pub('b2g/' + remote.id + '/h', JSON.stringify(d)); } catch (e) { } }
-function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp / perk.maxHp * 100)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, r: reloadT > 0 ? 1 : 0, pk: state === 'perk' ? perkOpts.map(p => [p.n, p.d]) : 0 }); }
+function remoteStatus() { remoteSend({ t: 'h', hp: Math.max(0, Math.round(hp / perk.maxHp * 100)), a: cur.ammo, m: cur.mag, w: cur.name, st: state, s: sensMul, r: reloadT > 0 ? 1 : 0, pk: state === 'perk' ? perkOpts.map(p => [p.n, p.d]) : 0 }); }
 function remoteUp() {
   setPair('✓ 遙控器已連線（' + (p2pOpen() ? '直連' : '中繼') + '）— 在手機上按「開始遊戲」');
   if (!remote.live) { remote.live = true; remote.sendT = 0; if (lastMode === 'remote' && state !== 'menu') { remote.on = true; document.body.classList.add('remote'); } }   // 斷線後回來可直接接手
@@ -1537,6 +1542,7 @@ function onRemote(d) {
   } else if (d.t === 'e') {
     if (d.k === 'start') { if (state !== 'play' && state !== 'perk') begin('remote'); }
     else if (d.k === 'perk') pickPerk(d.i | 0);
+    else if (d.k === 'sens') { sensMul = clamp(Math.round((sensMul + (+d.d || 0)) * 10) / 10, .4, 2.2); LS.set('b2sens', sensMul); $('sens').value = sensMul; remoteStatus(); }   // 手機上調靈敏度
     else if (remote.on && state === 'play') { if (d.k === 'reload') reload(); else if (d.k === 'next') switchWeapon(1); }
   }
 }
@@ -1639,7 +1645,7 @@ function updateWeapon(dt, mv) {
   gun.rotation.set(kick * .16 * w.gk * (1 - a * .6) + tilt * .42 + sgTilt * .4 + (w.shells && !flip ? cyc * .05 : 0) - sw * .7 + spin - fl,
     swayV.x * 1.5 * free - tilt * .25, tilt * .85 - flick * .55 + sgTilt * .4 + (w.scope ? cyc * .14 : 0));
   if (!remote.on && (aimU || aimV)) aimU = aimV = 0;
-  if (aimU || aimV) { const tv = Math.tan(camera.fov * Math.PI / 360); gun.rotation.y -= Math.atan(aimU * tv * camera.aspect) * .35; gun.rotation.x += Math.atan(aimV * tv) * .5; gun.position.x += aimU * .07; gun.position.y += aimV * .035; }   // 槍只小幅跟著準星轉，子彈仍打向準星
+  if (aimU || aimV) { const tv = Math.tan(camera.fov * Math.PI / 360); gun.rotation.y -= Math.atan(aimU * tv * camera.aspect) * .7; gun.rotation.x += Math.atan(aimV * tv) * .75; gun.position.x += aimU * .08; gun.position.y += aimV * .04; }   // 準星活動範圍小，槍口大致就指著準星
   const as = (aimU * 50).toFixed(2) + 'vw,' + (-aimV * 50).toFixed(2) + 'vh'; if (as !== lastAim) { lastAim = as; $('aim').style.transform = 'translate(' + as + ')'; }
   P.rack.position.z = P.rackZ + Math.max(w.cycle ? cyc : Math.min(1, kick * 1.6), rackR) * P.travel;
   if (P.mag) { P.mag.position.set(P.magBase.x + mx, P.magBase.y + my, P.magBase.z + mz); P.mag.rotation.set(mrot, 0, mrot * .35); }
