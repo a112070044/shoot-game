@@ -1586,7 +1586,7 @@ $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
-const clock = new THREE.Clock(); let timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0, lastUI = -1;
+const clock = new THREE.Clock(); let needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
   const w = cur, P = w.parts, play = state === 'play';
@@ -1638,7 +1638,7 @@ function updateWeapon(dt, mv) {
   gun.rotation.set(kick * .16 * w.gk * (1 - a * .6) + tilt * .42 + sgTilt * .4 + (w.shells && !flip ? cyc * .05 : 0) - sw * .7 + spin - fl,
     swayV.x * 1.5 * free - tilt * .25, tilt * .85 - flick * .55 + sgTilt * .4 + (w.scope ? cyc * .14 : 0));
   if (!remote.on && (aimU || aimV)) aimU = aimV = 0;
-  if (aimU || aimV) { const tv = Math.tan(camera.fov * Math.PI / 360); gun.rotation.y -= Math.atan(aimU * tv * camera.aspect) * .9; gun.rotation.x += Math.atan(aimV * tv) * .9; gun.position.x += aimU * .05; gun.position.y += aimV * .03; }
+  if (aimU || aimV) { const tv = Math.tan(camera.fov * Math.PI / 360); gun.rotation.y -= Math.atan(aimU * tv * camera.aspect) * .35; gun.rotation.x += Math.atan(aimV * tv) * .5; gun.position.x += aimU * .07; gun.position.y += aimV * .035; }   // 槍只小幅跟著準星轉，子彈仍打向準星
   const as = (aimU * 50).toFixed(2) + 'vw,' + (-aimV * 50).toFixed(2) + 'vh'; if (as !== lastAim) { lastAim = as; $('aim').style.transform = 'translate(' + as + ')'; }
   P.rack.position.z = P.rackZ + Math.max(w.cycle ? cyc : Math.min(1, kick * 1.6), rackR) * P.travel;
   if (P.mag) { P.mag.position.set(P.magBase.x + mx, P.magBase.y + my, P.magBase.z + mz); P.mag.rotation.set(mrot, 0, mrot * .35); }
@@ -1698,6 +1698,7 @@ function updatePlayer(dt) {
 }
 function frame() {
   requestAnimationFrame(frame);
+  if (needResize) { needResize = false; resize(); }      // 改畫布大小會清空畫面，所以放在這一格開始繪製之前
   const dt = Math.min(.05, clock.getDelta()) * timeScale, t = clock.elapsedTime;
   for (const l of lamps) { l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7; }
 
@@ -1742,13 +1743,15 @@ function frame() {
   fpsAcc += dt / timeScale; fpsN++;
   if (fpsAcc > 2) {
     const fps = fpsN / fpsAcc; fpsAcc = fpsN = 0;
-    if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); resize(); if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
+    if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); needResize = true; if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
     else if (fps < 30 && lamps[0].light.castShadow) lamps[0].light.castShadow = false;      // 仍然吃力就關掉掛燈陰影
-    else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); resize(); }
+    else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); needResize = true; }
   }
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 qBase.identity(); setWeapon(0);
+// 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
+{ spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
 window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
