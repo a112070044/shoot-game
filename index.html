@@ -731,6 +731,7 @@ const sfx = {
 
 /* ───────────────────────── 操控 ───────────────────────── */
 const input = { mx: 0, my: 0, fire: false, ads: false, keys: {} };
+const AIMX = .7, AIMY = .62;             // 準星最遠能離開畫面中央多遠（佔半個畫面的比例），不必頂到螢幕邊緣
 let aimU = 0, aimV = 0, lastAim = '';     // 準星在畫面上的位置（-1..1），只有手機遙控器模式會離開中央
 let yaw = 0, pitch = 0, useGyro = false, gyroOK = false, gyroYawOff = 0, needCalib = false;
 const ori = { a: 0, b: 0, g: 0, has: false };
@@ -1647,6 +1648,7 @@ function updateWeapon(dt, mv) {
     P.shell.position.set(-.09 * k, -.03 - .3 * k * k, -.03 + .06 * k); P.shell.rotation.set(HP + k * 9, 0, k * 4);
   }
   torch.position.z = lerp(-.12, -.5, a); torch.position.y = lerp(-.1, -.06, a);
+  { const tv = Math.tan(camera.fov * Math.PI / 360) * 6; torch.target.position.set(.01 + aimU * tv * camera.aspect, -.02 + aimV * tv, -6); }     // 槍燈裝在槍上，光束跟著槍口照向準星
   const scoped = w.scope ? smooth(.8, 1, a) : 0; gun.visible = scoped < .5;
   // 視野與 UI
   const fov = lerp(baseFov, w.adsFov * (vw < vh ? 1.25 : 1), a);
@@ -1663,15 +1665,15 @@ function updatePlayer(dt) {
     const dgy = remote.y - remote.ly, dgp = remote.p - remote.lp, ddx = remote.dx - remote.ldx, ddp = remote.dp - remote.ldp;
     remote.ly = remote.y; remote.lp = remote.p; remote.ldx = remote.dx; remote.ldp = remote.dp;
     remote.u += (clamp(-remote.y * G, -1, 1) - remote.u) * k; remote.v += (clamp(remote.p * G, -1, 1) - remote.v) * k;     // u：右為正、v：上為正
-    const ox = Math.atan(remote.u * .9 * f * tanH), oy = Math.atan(remote.v * .86 * f * tanV);       // 準星偏離畫面中央的角度
+    const ox = Math.atan(remote.u * AIMX * f * tanH), oy = Math.atan(remote.v * AIMY * f * tanV);       // 準星偏離畫面中央的角度
     if (Math.abs(ads - remote.ads) > 1e-4) { yaw += ox - remote.ox; pitch -= oy - remote.oy; }      // 開鏡/收鏡時準星收回中央，補償視角讓瞄準點不跳動
     remote.ads = ads; remote.ox = ox; remote.oy = oy;
-    const eu = Math.abs(remote.u) - .6, ev = Math.abs(remote.v) - .72;
-    if (eu > 0) yaw -= Math.sign(remote.u) * Math.pow(eu / .4, 1.5) * 2.5 * fovK * f * dt;
-    if (ev > 0) pitch += Math.sign(remote.v) * Math.pow(ev / .28, 1.5) * 1.1 * f * dt;
+    const eu = Math.abs(remote.u) - .45, ev = Math.abs(remote.v) - .55;                              // 準星走到活動範圍的 45%（上下 55%）就開始轉
+    if (eu > 0) yaw -= Math.sign(remote.u) * Math.pow(eu / .55, 1.2) * 2.8 * fovK * f * dt;
+    if (ev > 0) pitch += Math.sign(remote.v) * Math.pow(ev / .45, 1.2) * 1.3 * f * dt;
     yaw += dgy * 2 * sensMul * fovK * ads + ddx * fovK - lookDX * sens;                         // 開鏡時：手機的轉動直接帶動視角（精細瞄準）
     pitch = clamp(pitch + dgp * 2 * sensMul * fovK * ads + ddp * fovK - lookDY * sens, -1.35, 1.35);
-    aimU = remote.u * .9 * f; aimV = remote.v * .86 * f; lookDX = lookDY = 0;
+    aimU = remote.u * AIMX * f; aimV = remote.v * AIMY * f; lookDX = lookDY = 0;
     qBase.setFromEuler(eTmp.set(pitch, yaw, 0, 'YXZ'));
   } else if (useGyro && ori.has) {
     if (needCalib) calibrate(yaw);
