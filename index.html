@@ -692,30 +692,42 @@ function setPScale() {
 addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 250)); resize();
 
 /* ───────────────────────── 音效（WebAudio 合成） ───────────────────────── */
-let ac = null, master, noiseBuf;
+let ac = null, master, fx, noiseBuf;
 function initAudio() {
   if (ac) { ac.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
   ac = new AC(); master = ac.createGain(); master.gain.value = .7;
   const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
+  // 地下室殘響：所有音效都送一份進捲積殘響（程式產生的衰減噪音當脈衝響應）
+  fx = ac.createGain(); fx.connect(master);
+  const conv = ac.createConvolver(), ir = ac.createBuffer(2, ac.sampleRate * 2.4, ac.sampleRate), wet = ac.createGain(); wet.gain.value = .32;
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < d.length; i++) { const k = 1 - i / d.length; lp += ((Math.random() * 2 - 1) - lp) * (.15 + .5 * k); d[i] = lp * k * k * k; } }
+  conv.buffer = ir; fx.connect(conv); conv.connect(wet); wet.connect(comp);
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
   // 環境：低頻轟鳴 + 電流哼聲
   const n = ac.createBufferSource(); n.buffer = noiseBuf; n.loop = true; const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 110;
   const g = ac.createGain(); g.gain.value = .22; n.connect(f); f.connect(g); g.connect(master); n.start();
   for (const [fr, v] of [[50, .018], [100, .008]]) { const o = ac.createOscillator(); o.frequency.value = fr; const og = ac.createGain(); og.gain.value = v; o.connect(og); og.connect(master); o.start(); }
+  // 積水的細流聲：兩層濾波噪音，音量緩慢起伏
+  for (const [fr, q, v, lf] of [[1500, .8, .016, .13], [3400, 1.6, .007, .31]]) {
+    const w = ac.createBufferSource(); w.buffer = noiseBuf; w.loop = true; w.playbackRate.value = fr > 2000 ? 1.3 : .8;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = q; const wg = ac.createGain(); wg.gain.value = v;
+    const l = ac.createOscillator(); l.frequency.value = lf; const lg = ac.createGain(); lg.gain.value = v * .7; l.connect(lg); lg.connect(wg.gain); l.start();
+    w.connect(bp); bp.connect(wg); wg.connect(fx); w.start();
+  }
 }
 function noise(dur, type, f0, f1, vol, q = 1) {
   if (!ac) return; const t = ac.currentTime, s = ac.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = rand(.85, 1.15);
   const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
   const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-  s.connect(f); f.connect(g); g.connect(master); s.start(t, rand(.5)); s.stop(t + dur);
+  s.connect(f); f.connect(g); g.connect(fx); s.start(t, rand(.5)); s.stop(t + dur);
 }
 function tone(type, f0, f1, dur, vol, lfo) {
   if (!ac) return; const t = ac.currentTime, o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
   const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + Math.min(.03, dur * .2)); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   let out = o;
   if (lfo) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 480; o.connect(f); out = f; const l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = vol * .6; l.connect(lg); lg.connect(g.gain); l.start(t); l.stop(t + dur); }
-  out.connect(g); g.connect(master); o.start(t); o.stop(t + dur);
+  out.connect(g); g.connect(fx); o.start(t); o.stop(t + dur);
 }
 const sfx = {
   shot(w) { const s = w.snd; noise(.22 * s[2], 'lowpass', s[0], 320, .95); noise(.05, 'highpass', 2500, 5000, .4); tone('triangle', s[1], 42, .14 * s[2], .8); },
@@ -731,7 +743,9 @@ const sfx = {
   die() { tone('sawtooth', 120, 30, .7, .32, 28); noise(.3, 'lowpass', 700, 120, .35); },
   hurt() { tone('sine', 95, 38, .3, .9); noise(.16, 'lowpass', 900, 150, .6); },
   pick() { tone('sine', 660, 1320, .2, .25); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { noise(.22, 'bandpass', 1100, 300, .3, 2); },
-  drip() { tone('sine', rand(1500, 2100), rand(700, 900), .09, .05); }
+  drip() { const f = rand(500, 1100), v = rand(.05, .12); tone('sine', f, f * rand(2, 2.8), .055, v); setTimeout(() => tone('sine', f * 1.6, f * 2.6, .04, v * .45), rand(60, 120)); },   // 水滴落進積水
+  step(v) { noise(.2, 'bandpass', rand(650, 1050), 330, .26 * v, .8); noise(.3, 'highpass', 2600, 1300, .045 * v); tone('sine', 75, 46, .09, .1 * v); },   // 踩進積水
+  hop(v) { tone('sine', 95, 42, .14, v); noise(.24, 'bandpass', rand(700, 1000), 380, v * .55, .8); }                                                    // 殭屍落地
 };
 
 /* ───────────────────────── 操控 ───────────────────────── */
@@ -850,26 +864,26 @@ const smin = (a, b, k) => { const h = Math.max(k - Math.abs(a - b), 0) / k; retu
 const smax = (a, b, k) => -smin(-a, -b, k);
 const shX = g => .17 * g + .045;      // 肩關節 x
 
-function bodySDF(p, G) {
-  const g = G.g, q = [Math.abs(p[0]), p[1], p[2]], sh = shX(g);
-  let d = sdEll(p, [0, .99, 0], [.15 * g, .11, .105 * g]);                                   // 骨盆
-  d = smin(d, sdCap(p, [0, 1.04, .005], [0, 1.2, 0], .098 * g, .102 * g), .05);              // 腹
-  d = smin(d, sdEll(p, [0, 1.33, -.005], [.165 * g, .16, .11 * g]), .05);                    // 胸廓
-  if (G.belly) d = smin(d, sdEll(p, [0, 1.13, .05], [.15 * g, .16, .16 * G.belly]), .06);    // 鼓脹的肚子
-  d = smin(d, sdCap(q, [0, 1.445, -.01], [.17 * g, 1.44, -.01], .055, .05), .04);            // 肩
-  d = smin(d, sdCap(p, [0, 1.45, -.01], [0, 1.58, .012], .05 * g, .045 * g), .03);           // 頸
-  d = smin(d, sdCap(q, [sh, 1.43, -.01], [sh + .02, 1.15, -.005], .047 * g, .037 * g), .03); // 上臂
-  d = smin(d, sdCap(q, [sh + .02, 1.15, -.005], [sh + .031, .9, .02], .036 * g, .026 * g), .015);
-  d = smin(d, sdCap(q, [.095, .93, 0], [.105, .5, .012], .078 * g, .052 * g), .04);          // 大腿
-  d = smin(d, sdCap(q, [.105, .5, .012], [.105, .09, -.012], .05 * g, .034 * g), .02);       // 小腿
-  d = smin(d, sdEll(q, [.105, .33, -.03], [.045 * g, .11, .05 * g]), .03);
-  d = smin(d, Math.max(sdCap(q, [.105, .045, -.03], [.112, .032, .13], .045, .035), -p[1]), .03);   // 腳掌
-  if (!G.belly) d -= .0045 * Math.sin(p[1] * 85) * smooth(1.2, 1.26, p[1]) * smooth(1.42, 1.36, p[1]) * smooth(.02, .08, q[0]) * smooth(.17 * g, .14 * g, q[0]);   // 肋骨
-  d = smax(d, -sdSph(p, .14 * g, 1.19, .07 * g, .05), .015);                                  // 側腹被咬掉一塊
-  d = smax(d, -sdSph(p, -.11, .7, .06, .035), .012);                                           // 大腿傷口
-  return d;
+const braidSDF = p => Math.min(sdCap(p, [0, 1.6, -.085], [0, 1.32, -.135], .022, .02), sdCap(p, [0, 1.32, -.135], [.015, 1.02, -.14], .02, .014));
+function bodySDF(p, G) {     // 清朝官服：長袍垂到腳踝、寬袖、背後一條辮子
+  const g = G.g, q = [Math.abs(p[0]), p[1], p[2]], sh = shX(g), s = [p[0], p[1], p[2] * 1.22];
+  let d = sdEll(p, [0, 1.33, -.005], [.17 * g, .17, .115 * g]);                                           // 胸
+  if (G.belly) d = smin(d, sdEll(p, [0, 1.13, .05], [.16 * g, .17, .16 * G.belly]), .06);
+  d = smin(d, sdCap(q, [0, 1.445, -.01], [.17 * g, 1.44, -.01], .06, .055), .04);                         // 肩
+  d = smin(d, sdCap(p, [0, 1.45, -.01], [0, 1.58, .012], .05 * g, .045 * g), .03);                        // 頸
+  d = smin(d, Math.max(sdCap(s, [0, 1.2, 0], [0, .2, 0], .115 * g, .2 * g) / 1.22, .13 - p[1]), .05);     // 長袍下襬
+  d = smin(d, sdCap(q, [sh, 1.43, -.01], [sh + .02, 1.15, -.005], .058 * g, .06 * g), .03);               // 上臂
+  d = Math.min(d, Math.max(sdCap(q, [sh + .02, 1.15, -.005], [sh + .033, .9, .02], .06 * g, .078 * g), .925 - p[1]));   // 喇叭袖口
+  d = Math.min(d, sdCap(q, [.085, .1, -.01], [.085, .2, -.01], .04, .05));
+  d = smin(d, Math.max(sdCap(q, [.085, .045, -.03], [.09, .035, .13], .048, .04), -p[1]), .02);           // 黑布鞋
+  return smin(d, braidSDF(p), .01);
 }
 const teethD = p => Math.min(sdEll(p, [0, 1.582, .082], [.022, .0055, .014]), sdEll(p, [0, 1.5625, .078], [.02, .005, .013]));
+const hatSDF = p => {        // 暖帽：上翻的帽檐、圓帽頂、紅頂珠
+  const r = Math.hypot(p[0], p[2] + .005);
+  const h = smin(Math.max(Math.abs(r - .093) - .017, Math.abs(p[1] - 1.735) - .03), sdEll(p, [0, 1.74, -.005], [.088, .052, .088]), .012);
+  return Math.min(h, sdSph(p, 0, 1.805, -.005, .016));
+};
 function headSDF(p) {
   const q = [Math.abs(p[0]), p[1], p[2]];
   let d = sdEll(p, [0, 1.665, -.005], [.076, .092, .094]);                    // 顱
@@ -880,20 +894,23 @@ function headSDF(p) {
   d = smin(d, sdEll(q, [.079, 1.63, -.005], [.008, .024, .015]), .008);       // 耳
   d = smin(d, sdCap(p, [0, 1.48, -.012], [0, 1.58, .008], .049, .046), .03);  // 頸
   d = smax(d, -sdSph(q, .031, 1.643, .079, .018), .008);                      // 眼窩
-  d = smax(d, -sdSph(q, .05, 1.595, .062, .022), .02);                        // 凹陷的臉頰
-  d = smax(d, -sdEll(p, [0, 1.572, .088], [.028, .013, .03]), .006);          // 張開的嘴
+  d = smax(d, -sdSph(q, .05, 1.595, .062, .024), .02);                        // 乾癟的臉頰
+  d = smax(d, -sdEll(p, [0, 1.572, .088], [.028, .015, .03]), .006);          // 張開的嘴
   d = smax(d, -sdSph(q, .007, 1.616, .108, .006), .004);                      // 鼻孔
-  return Math.min(d, teethD(p));
+  d = Math.min(d, teethD(p), sdCap(q, [.013, 1.582, .089], [.013, 1.557, .093], .0055, .0025));   // 牙與獠牙
+  return Math.min(d, hatSDF(p));
 }
-function handSDF(p) {     // 右手（+x），手指內彎成爪
+function handSDF(p) {     // 右手（+x），手指內彎成爪，指甲又長又尖
   let d = sdCap(p, [.244, .95, .014], [.246, .89, .02], .027, .024);
   d = smin(d, sdEll(p, [.247, .855, .026], [.017, .042, .036]), .015);
   for (let i = 0; i < 4; i++) {
     const z = -.004 + i * .0185, l = i === 1 || i === 2 ? 1 : .85;
     d = smin(d, sdCap(p, [.247, .825, z], [.243, .825 - .04 * l, z + .012], .0085, .0075), .006);
     d = smin(d, sdCap(p, [.243, .825 - .04 * l, z + .012], [.232, .825 - .07 * l, z + .03], .0075, .006), .004);
+    d = Math.min(d, sdCap(p, [.232, .825 - .07 * l, z + .03], [.222, .825 - .115 * l, z + .05], .006, .0035));   // 指甲
   }
-  return smin(d, sdCap(p, [.245, .87, .055], [.236, .83, .078], .0095, .007), .008);
+  d = smin(d, sdCap(p, [.245, .87, .055], [.236, .83, .078], .0095, .007), .008);
+  return Math.min(d, sdCap(p, [.236, .83, .078], [.228, .8, .1], .006, .0035));
 }
 // Surface Nets：每個跨越表面的格子放一個頂點，再沿變號的格線連成四邊形
 function surfaceNets(sdf, mn, mx, cell) {
@@ -925,7 +942,7 @@ function surfaceNets(sdf, mn, mx, cell) {
 const ZPAR = [-1, 0, 1, 1, 3, 1, 5, 0, 7, 0, 9], ZADJ = [[0, 1], [1, 2], [1, 3], [3, 4], [1, 5], [5, 6], [0, 7], [7, 8], [0, 9], [9, 10]];
 const zn = makeNoise(77), lin = c => Math.pow(clamp(c, 0, 1), 2.2);
 function buildZombie(G) {
-  const g = G.g, sh = shX(g), P = [], Nn = [], Cc = [], SI = [], SW = [], IX = [];
+  const g = G.g, sh = shX(g), P = [], Nn = [], Cc = [], SI = [], SW = [], IX = [], PT = [];
   const segs = [[0, [0, .93, 0], [0, 1, 0], .13], [1, [0, 1.06, 0], [0, 1.42, 0], .14], [1, [-.15 * g, 1.44, 0], [.15 * g, 1.44, 0], .07], [2, [0, 1.54, 0], [0, 1.7, 0], .07]];
   for (const s of [-1, 1]) {
     const a = s < 0 ? 3 : 5, l = s < 0 ? 7 : 9;
@@ -940,23 +957,28 @@ function buildZombie(G) {
       const f = (x, y, z) => { q[0] = p[0] + x; q[1] = p[1] + y; q[2] = p[2] + z; return sdf(q); };
       n[0] = f(e, 0, 0) - f(-e, 0, 0); n[1] = f(0, e, 0) - f(0, -e, 0); n[2] = f(0, 0, e) - f(0, 0, -e);
       const nl = Math.hypot(n[0], n[1], n[2]) || 1; n[0] /= nl; n[1] /= nl; n[2] /= nl;
-      // 顏色：蒼白屍斑皮膚、破爛衣褲、血跡、凹處壓暗
+      // 顏色：乾屍皮膚、官帽；長袍的花紋在著色器裡依原始座標逐像素畫（頂點色只帶陰影與血跡）
       const N1 = zn.fbm(p[0] * .9 + p[2] * .7 + 3.1, p[1] * .9 + p[2] * .3 + 1.7, 6, 3), N2 = zn.fbm(p[0] * 1.3 - p[2] * .8 + 9.2, p[1] * 1.1 + 7.7, 14, 2);
-      const N3 = zn.fbm(p[0] * 1.1 + 2.2, p[1] * .8 + p[2] + 4.4, 5, 2), ax = Math.abs(p[0]), y = p[1];
-      let r = .5, gg = .52, b = .45, bl = 0; const br = smooth(.5, .75, N1) * .7;
-      r += (.36 - r) * br; gg += (.34 - gg) * br; b += (.38 - b) * br; r += (N2 - .5) * .1; gg += (N2 - .5) * .1; b += (N2 - .5) * .09;
+      const N3 = zn.fbm(p[0] * 1.1 + 2.2, p[1] * .8 + p[2] + 4.4, 5, 2), y = p[1];
+      let r = .5, gg = .47, b = .37, bl = 0, pt = part; const br = smooth(.45, .75, N1) * .6;
+      r += (.3 - r) * br; gg += (.27 - gg) * br; b += (.22 - b) * br;
+      const wr = .82 + .18 * Math.sin(y * 420 + N2 * 9); r *= wr; gg *= wr; b *= wr;                                                    // 皺紋
       if (part === 0) {
-        if (y < 1.07 && y > .13 + N1 * .22 && N2 < .74) { r = .1 + N2 * .07; gg = .12 + N2 * .07; b = .16 + N2 * .08; }                 // 褲子（下襬破爛）
-        else if (y > 1.02 && y < 1.5 && ax < sh - .03 && N1 < .6) { r = .24 + N2 * .12; gg = .23 + N2 * .11; b = .2 + N2 * .09; }         // 襯衫殘片
-        bl = Math.max(smooth(.66, .82, N3) * .8, smooth(.085, .05, Math.hypot(p[0] - .14 * g, y - 1.19, p[2] - .07 * g)), smooth(.06, .035, Math.hypot(p[0] + .11, y - .7, p[2] - .06)));
-        if (p[2] > 0 && y > 1.15) bl = Math.max(bl, smooth(.4, .62, N2 + (y - 1.36) * 1.2) * smooth(.085, .02, ax + (1.5 - y) * .12) * .75);                             // 從嘴滴到胸口
-        if (y < .14) bl = Math.max(bl, .35);
+        if (braidSDF(p) < .012 && p[2] < -.1) { r = gg = b = .05 + N2 * .04; pt = 3; }                                                  // 辮子
+        else if (y < .13) { r = gg = b = .04; pt = 3; }                                                                                 // 布鞋
+        else if (y > 1.5) pt = 3;                                                                                                       // 脖子（皮膚）
+        else { r = gg = b = .96; bl = smooth(.66, .82, N3) * .7; }                                                                      // 長袍：白底，花紋由著色器上色
       } else if (part === 1) {
-        if (y > 1.7 && N2 > .5) { r = gg = b = .1; }                                                                                      // 殘存的頭髮
-        bl = smooth(.08, .03, Math.hypot(p[0], (y - 1.572) * 1.3, p[2] - .085)) * .9;
-        bl = Math.max(bl, smooth(.64, .82, N3) * .6);
-        if (teethD(p) < .003) { r = .8; gg = .74; b = .56; bl = .15; }
-      } else bl = smooth(.9, .8, y) * .9;                                                                                                 // 沾血的手
+        bl = smooth(.07, .03, Math.hypot(p[0], (y - 1.572) * 1.3, p[2] - .085)) * .7;
+        if (teethD(p) < .003 || (Math.abs(Math.abs(p[0]) - .013) < .007 && y < 1.585 && y > 1.553 && p[2] > .082)) { r = .8; gg = .74; b = .56; bl = .1; }
+        if (hatSDF(p) < .005) {
+          bl = 0; const rr = Math.hypot(p[0], p[2] + .005);
+          if (y > 1.79) { r = .8; gg = .07; b = .05; }                                                                                  // 紅頂珠
+          else if (Math.hypot(p[0], y - 1.735, p[2] - .105) < .016) { r = .08; gg = .75; b = .3; }                                      // 帽正（綠寶石）
+          else if (rr > .078 && y < 1.768) { r = .13 + N2 * .08; gg = .1 + N2 * .06; b = .08 + N2 * .05; }                              // 毛皮帽檐
+          else { r = gg = .05; b = .06; }
+        }
+      } else { bl = smooth(.86, .78, y) * .35; if (y < .775) { r = .2; gg = .15; b = .1; } }                                            // 手；指甲發黑
       r += (.2 - r) * bl; gg += (.02 - gg) * bl; b += (.018 - b) * bl;
       const ao = clamp(.3 + .7 * f(n[0] * .03, n[1] * .03, n[2] * .03) / .03, .25, 1);
       // 蒙皮權重：取「距離/骨頭粗細」最小的骨頭，並與其相鄰骨頭混合
@@ -972,18 +994,19 @@ function buildZombie(G) {
         w2 = part === 2 ? 0 : clamp(.5 - (s2 - sc[b1]) * 1.3, 0, .5);
       }
       P.push(X, y, p[2]); Nn.push(mirror ? -n[0] : n[0], n[1], n[2]); Cc.push(lin(r) * ao, lin(gg) * ao, lin(b) * ao);
-      SI.push(b1, b2, 0, 0); SW.push(1 - w2, w2, 0, 0);
+      SI.push(b1, b2, 0, 0); SW.push(1 - w2, w2, 0, 0); PT.push(pt);
     }
     for (let i = 0; i < m.idx.length; i += 3) IX.push(base + m.idx[i], base + m.idx[i + (mirror ? 2 : 1)], base + m.idx[i + (mirror ? 1 : 2)]);
   }
   const Q = IS_TOUCH ? 1.2 : 1;
   add(p => bodySDF(p, G), [-(sh + .13), -.03, -.19 * g], [sh + .13, 1.6, .16 * g + (G.belly ? .16 : .04)], .0275 * Q, 0, false, 0);
-  add(headSDF, [-.1, 1.465, -.115], [.1, 1.775, .125], .0118 * Q, 1, false, 0);
-  add(handSDF, [.2, .735, -.03], [.29, .975, .1], .0096 * Q, 2, false, sh - .215);
-  add(handSDF, [.2, .735, -.03], [.29, .975, .1], .0096 * Q, 2, true, sh - .215);
+  add(headSDF, [-.122, 1.465, -.128], [.122, 1.835, .125], .0118 * Q, 1, false, 0);
+  add(handSDF, [.2, .69, -.03], [.29, .975, .125], .0096 * Q, 2, false, sh - .215);
+  add(handSDF, [.2, .69, -.03], [.29, .975, .125], .0096 * Q, 2, true, sh - .215);
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(Nn, 3));
   geo.setAttribute('color', new THREE.Float32BufferAttribute(Cc, 3));
+  geo.setAttribute('aPart', new THREE.Float32BufferAttribute(PT, 1));
   geo.setAttribute('skinIndex', new THREE.Uint16BufferAttribute(SI, 4)); geo.setAttribute('skinWeight', new THREE.Float32BufferAttribute(SW, 4));
   geo.setIndex(IX);
   const pivots = [[0, .95, 0], [0, 1, 0], [0, 1.5, 0], [-sh, 1.43, -.01], [-(sh + .02), 1.15, -.005], [sh, 1.43, -.01], [sh + .02, 1.15, -.005],
@@ -992,9 +1015,41 @@ function buildZombie(G) {
   const hit = [hb(0, .34 * g, .16, .24 * g, 0, .02, 0), hb(1, .4 * g, .52, .27 * g + (G.belly ? .1 : 0), 0, .26, G.belly ? .04 : 0), hb(2, .19, .27, .23, 0, .14, .01, 1)];
   for (const k of [3, 5]) hit.push(hb(k, .11 * g, .3, .11 * g, 0, -.14, 0), hb(k + 1, .1 * g, .4, .11 * g, 0, -.19, .01));
   for (const k of [7, 9]) hit.push(hb(k, .17 * g, .44, .18 * g, 0, -.21, 0), hb(k + 1, .13 * g, .5, .16 * g, 0, -.25, .01));
-  return { geo, pivots, hit, inv: pivots.map(p => new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2])), tris: IX.length / 3 };
+  return { geo, pivots, hit, sh, inv: pivots.map(p => new THREE.Matrix4().makeTranslation(-p[0], -p[1], -p[2])), tris: IX.length / 3 };
 }
 const ZB = { normal: buildZombie({ g: 1 }), thin: buildZombie({ g: .86 }), fat: buildZombie({ g: 1.1, belly: 1.25 }), bulk: buildZombie({ g: 1.28, belly: .8 }) };
+// 長袍花紋：用蒙皮前的原始座標逐像素繪製（團花暗紋、海水江崖下襬、袖口金線、胸前補子、藍領、朝珠），不受網格密度限制
+function robeShader(sh) {
+  sh.uniforms.uRobe = { value: this.userData.robe }; sh.uniforms.uSh = { value: this.userData.sh };
+  sh.vertexShader = 'attribute float aPart; varying float vPart; varying vec3 vRest; varying vec3 vRestN;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vPart = aPart; vRest = position; vRestN = normal;');
+  sh.fragmentShader = `varying float vPart; varying vec3 vRest; varying vec3 vRestN; uniform vec3 uRobe; uniform float uSh;
+    vec3 rpal(float t){ t = fract(t) * 5.; return t < 1. ? vec3(.62,.07,.05) : t < 2. ? vec3(.75,.55,.08) : t < 3. ? vec3(.06,.34,.16) : t < 4. ? vec3(.08,.18,.6) : vec3(.72,.7,.62); }
+    vec3 robe(vec3 p, vec3 n){
+      float ax = abs(p.x), th = atan(p.x, p.z); vec3 c = uRobe;
+      vec2 g = fract(vec2(th * 2.5, p.y * 6.)) - .5; c *= 1. + .28 * smoothstep(.32, .27, length(g)) * (1. - smoothstep(.2, .14, length(g)));     // 團花暗紋
+      if (p.y < .36) c = mix(rpal((p.y * 30. + sin(th * 9.) * 1.1) * .2) * .3, c, smoothstep(.31, .36, p.y));                              // 海水江崖
+      if (ax > uSh) { float k = smoothstep(1.1, 1.04, p.y); c = mix(c, mix(vec3(.3,.21,.04), uRobe * .5, step(.5, fract(p.y * 34.))), k); if (p.y < .94) c = uRobe * .12; }  // 袖口金線
+      vec2 q = vec2(p.x, p.y - 1.215);
+      if (n.z > .15 && abs(q.x) < .09 && abs(q.y) < .09) {                                                                                 // 補子
+        vec3 e = q.y > -.02 ? mix(vec3(.1,.2,.5), vec3(.75,.12,.08), smoothstep(.006, 0., abs(length(q - vec2(.045,.05)) - .016))) : rpal(q.y * 9. + sin(q.x * 70.) * .12);
+        e = mix(e, vec3(.85,.66,.2), smoothstep(.034, .028, length((q - vec2(-.008, .012)) * vec2(1., 1.5))));                               // 金線繡的鳥
+        c = max(abs(q.x), abs(q.y)) > .078 ? vec3(.4,.29,.06) : e * .55;
+      }
+      if (p.y > 1.37 && (length(p.xz) < .1 || (n.z > 0. && ax < (p.y - 1.37) * 1.1 + .015))) c = vec3(.04,.09,.36);                         // 藍領
+      vec2 e2 = vec2(p.x / .062, (p.y - 1.255) / .215); float d = abs(length(e2) - 1.) * .062;
+      if (n.z > .1 && d < .0075 && p.y < 1.46) c = mix(c * .35, vec3(.7,.4,.32), smoothstep(.15, .55, abs(sin(atan(e2.y, e2.x) * 34.))));  // 朝珠
+      return c;
+    }\n` + sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n if (vPart < .5) diffuseColor.rgb = robe(vRest, normalize(vRestN)) * vColor.rgb;');
+}
+// 額頭上的符咒
+const fuTex = (() => {
+  const c = document.createElement('canvas'); c.width = 64; c.height = 192; const g = c.getContext('2d');
+  g.fillStyle = '#d9b21c'; g.fillRect(0, 0, 64, 192); g.strokeStyle = '#a3140c'; g.lineWidth = 4; g.lineCap = 'round';
+  g.font = 'bold 30px serif'; g.fillStyle = '#a3140c'; g.textAlign = 'center'; g.fillText('敕', 32, 36); g.fillText('令', 32, 70);
+  g.beginPath(); let y = 84; for (let i = 0; i < 7; i++) { g.moveTo(14, y); g.bezierCurveTo(60, y + 4, 4, y + 10, 50, y + 14); y += 14; } g.moveTo(32, 80); g.lineTo(32, 186); g.stroke();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+})();
+const fuGeo = new THREE.PlaneGeometry(.042, .126).translate(0, -.063, 0), fuMat = new THREE.MeshStandardMaterial({ map: fuTex, color: 0x8c8c8c, roughness: .95, side: THREE.DoubleSide, emissive: 0x0c0a02 });
 const hitMat = new THREE.MeshBasicMaterial({ visible: false }), IDENT = new THREE.Matrix4(), eyeGeo = new THREE.SphereGeometry(.0105, 8, 6);
 
 /* ───────────────────────── 槍枝與手部模型（SDF 硬表面雕塑） ─────────────────────────
@@ -1194,12 +1249,12 @@ function updateDebris(dt) {
 }
 
 /* ───────────────────────── 怪物 ───────────────────────── */
-const TYPES = {
-  walker: { build: 'normal', tint: [1, 1, 1], hp: 4, speed: 1.45, scale: 1, dmg: 10, skin: 0x59604f, eye: [1.76, 0.14, 0.06], lean: .35, score: 100 },
-  runner: { build: 'thin', tint: [1.08, .85, .8], hp: 2.5, speed: 3.3, scale: .86, dmg: 7, skin: 0x6b5a4c, eye: [1.65, 1.21, 0.11], lean: .75, score: 150 },
-  brute: { build: 'bulk', tint: [.8, .86, .98], hp: 13, speed: 1.05, scale: 1.38, dmg: 22, skin: 0x3d4348, eye: [1.87, 0.55, 0.06], lean: .25, score: 400 },
-  spitter: { build: 'fat', tint: [.72, 1.08, .68], hp: 3, speed: 1.7, scale: .95, dmg: 9, skin: 0x3f5a3a, eye: [0.22, 1.76, 0.28], lean: .55, score: 200, spit: true },   // 遠距離吐酸液
-  boss: { build: 'bulk', tint: [.5, .45, .58], hp: 70, speed: 1.3, scale: 1.65, dmg: 30, skin: 0x2a2226, eye: [1.43, 1.54, 1.98], lean: .4, score: 2000, boss: true }
+const TYPES = {   // robe：官服顏色；hop：每秒跳幾下；hh：跳多高
+  walker: { build: 'normal', tint: [1, 1, 1], robe: [.016, .024, .055], hop: 2.1, hh: .16, hp: 4, speed: 1.45, scale: 1, dmg: 10, eye: [1.76, 0.14, 0.06], lean: .06, score: 100 },
+  runner: { build: 'thin', tint: [1.05, .9, .85], robe: [.11, .012, .012], hop: 3.4, hh: .2, hp: 2.5, speed: 3.3, scale: .86, dmg: 7, eye: [1.65, 1.21, 0.11], lean: .16, score: 150 },
+  brute: { build: 'bulk', tint: [.85, .9, 1], robe: [.012, .045, .028], hop: 1.6, hh: .1, hp: 13, speed: 1.05, scale: 1.38, dmg: 22, eye: [1.87, 0.55, 0.06], lean: .05, score: 400 },
+  spitter: { build: 'fat', tint: [.75, 1.08, .7], robe: [.05, .016, .075], hop: 2.3, hh: .14, hp: 3, speed: 1.7, scale: .95, dmg: 9, eye: [0.22, 1.76, 0.28], lean: .1, score: 200, spit: true },   // 遠距離吐酸液
+  boss: { build: 'bulk', tint: [.6, .55, .65], robe: [.32, .21, .025], hop: 1.8, hh: .12, hp: 70, speed: 1.3, scale: 1.65, dmg: 30, eye: [1.43, 1.54, 1.98], lean: .05, score: 2000, boss: true }   // 明黃龍袍
 };
 const SPAWNS = [
   { sx: 0, sz: -D / 2 - 6, wx: 0, wz: -D / 2 + 1.4 }, { sx: 0, sz: D / 2 + 6, wx: 0, wz: D / 2 - 1.4 },
@@ -1212,6 +1267,7 @@ function spawnEnemy(force) {
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const Z = ZB[T.build], v = () => rand(.88, 1.06);
   const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72, color: new THREE.Color(T.tint[0] * v(), T.tint[1] * v(), T.tint[2] * v()) });
+  mat.userData = { robe: new THREE.Color(T.robe[0], T.robe[1], T.robe[2]), sh: Z.sh - .035 }; mat.onBeforeCompile = robeShader; mat.customProgramCacheKey = () => 'robe';
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
     ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
@@ -1227,7 +1283,8 @@ function spawnEnemy(force) {
   [e.hips, e.torso, e.head, e.armL, e.foreL, e.armR, e.foreR, e.legL, e.shinL, e.legR, e.shinR] = bones;
   e.torso.rotation.x = T.lean; e.head.rotation.x = -T.lean * .8; e.side = Math.random() < .5 ? -1 : 1;
   for (const sx of [-.031, .031]) { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(sx, .143, .071); e.head.add(m); }
-  root.scale.setScalar(T.scale);
+  if (!T.boss && Math.random() < .75) { e.fu = new THREE.Mesh(fuGeo, fuMat); e.fu.position.set(0, .2, .118); e.head.add(e.fu); }     // 多數殭屍額頭貼著符
+  e.sd = rand(6.28); e.hy = 0; root.scale.setScalar(T.scale);
   root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
   if (Math.random() < .5) sfx.growl(.22);
 }
@@ -1254,8 +1311,7 @@ function updateEnemies(dt, t) {
     if (e.dead) {
       e.deadT += dt; const k = Math.min(1, e.deadT / .5);
       e.body.rotation.x = -k * k * Math.PI / 2; e.body.position.y = k * .11; const q = Math.min(1, dt * 5);
-      e.armL.rotation.x += (-.5 - e.armL.rotation.x) * q; e.armR.rotation.x += (-2.95 - e.armR.rotation.x) * q; e.armL.rotation.z += (-.7 - e.armL.rotation.z) * q; e.armR.rotation.z += (.5 - e.armR.rotation.z) * q;
-      e.legL.rotation.x += (.25 - e.legL.rotation.x) * q; e.legR.rotation.x += (-.5 - e.legR.rotation.x) * q; e.shinR.rotation.x += (.9 - e.shinR.rotation.x) * q; e.head.rotation.y += (e.side * .7 - e.head.rotation.y) * q;
+      e.head.rotation.y += (e.side * .5 - e.head.rotation.y) * q;      // 直挺挺地倒下，手還舉著
       e.x += e.kx * dt; e.z += e.kz * dt; e.kx *= Math.exp(-dt * 5); e.kz *= Math.exp(-dt * 5);
       if (e.deadT > 5) e.root.position.y -= dt * .25;
       e.root.position.x = e.x; e.root.position.z = e.z;
@@ -1281,7 +1337,7 @@ function updateEnemies(dt, t) {
     }
     e.stun = Math.max(0, e.stun - dt);
     const hold = e.T.spit && e.mode === 'chase' && dist < 6.5;
-    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1);
+    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1) * 1.57 * Math.abs(Math.sin(e.ph));      // 只有騰空時才前進
     if (e.T.spit && e.mode === 'chase' && dist < 12 && state === 'play') { e.spitT -= dt; if (e.spitT <= 0) { e.spitT = rand(2.2, 3.4); spit(e); } }
     e.x += (vx * sp + e.kx) * dt; e.z += (vz * sp + e.kz) * dt; e.kx *= Math.exp(-dt * 9); e.kz *= Math.exp(-dt * 9);
     if (e.mode === 'chase') {
@@ -1291,18 +1347,18 @@ function updateEnemies(dt, t) {
     // 朝向與動作
     let dr = Math.atan2(dx, dz) - e.rot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); e.rot += dr * Math.min(1, dt * 7);
     e.root.position.set(e.x, 0, e.z); e.root.rotation.y = e.rot;
-    e.ph += dt * sp * 3.4 / e.T.scale; const s = Math.sin(e.ph);
-    e.legL.rotation.x = s * .6; e.legR.rotation.x = -s * .6;
-    const cph = Math.cos(e.ph); e.shinL.rotation.x = Math.max(0, -cph) * .95 + .08; e.shinR.rotation.x = Math.max(0, cph) * .95 + .08;     // 膝蓋彎曲
-    e.body.position.y = Math.abs(cph) * .035; e.torso.rotation.z = s * .07; e.torso.rotation.y = s * .12; e.head.rotation.z = Math.sin(t * 2.3 + e.ph) * .14 + e.side * .12; e.head.rotation.y = Math.sin(t * 1.1 + e.ph * .3) * .2;
-    let reach = -1.25 + e.T.lean * .3;
+    const ph0 = e.ph, going = !(inRange || hold); e.ph += dt * e.T.hop * Math.PI * (going ? (e.stun > 0 ? .3 : 1) : 0);
+    if (Math.floor(e.ph / Math.PI) !== Math.floor(ph0 / Math.PI) && dist < 12 && state === 'play') sfx.hop(clamp(.55 - dist * .045, .04, .5));   // 落地聲
+    e.hy += ((going ? Math.abs(Math.sin(e.ph)) : 0) - e.hy) * Math.min(1, dt * 14); const s = Math.sin(t * 1.7 + e.sd);
+    e.body.position.y = e.hy * e.T.hh; e.torso.rotation.z = s * .03; e.head.rotation.z = e.side * .1 + s * .05; e.head.rotation.y = Math.sin(t * .9 + e.sd) * .14;
+    if (e.fu) e.fu.rotation.x = -.12 - e.hy * .5 + s * .06;
+    let reach = -1.5 + e.hy * .1;
     if (inRange) {
       e.atk += dt;
-      if (e.atk > 0) reach -= Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .9;
+      if (e.atk > 0) reach += Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .8 - .35 * Math.sin(Math.min(1, e.atk / .2) * Math.PI);     // 先抬手再往下抓
       if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
     } else e.atk = Math.min(e.atk, -.15);
-    e.armL.rotation.x = reach + s * .18; e.armR.rotation.x = reach * (.8 + e.side * .15) - s * .18;
-    e.foreL.rotation.x = -.5 + s * .12; e.foreR.rotation.x = -.3 - s * .12; e.armL.rotation.z = .12; e.armR.rotation.z = -.12;
+    e.armL.rotation.x = e.armR.rotation.x = reach; e.armL.rotation.z = .05; e.armR.rotation.z = -.05;
     e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
   }
   return alive;
@@ -1700,7 +1756,8 @@ function updatePlayer(dt) {
   player.x += (mx * cs + my * sn) * SPEED * dt; player.z += (-mx * sn + my * cs) * SPEED * dt;
   player.x = clamp(player.x, -W / 2 + .4, W / 2 - .4); player.z = clamp(player.z, -D / 2 + .4, D / 2 - .4);
   for (const o of obstacles) { const ox = player.x - o.x, oz = player.z - o.z, d = Math.hypot(ox, oz), R = o.r + .34; if (d < R && d > 1e-4) { player.x = o.x + ox / d * R; player.z = o.z + oz / d * R; } }
-  const mv = Math.min(1, ml); bobT += dt * mv * 9.5 * (1 - ads * .5);
+  const mv = Math.min(1, ml), b0 = bobT; bobT += dt * mv * 9.5 * (1 - ads * .5);
+  if (mv > .15 && Math.floor(bobT / Math.PI) !== Math.floor(b0 / Math.PI)) sfx.step(.5 + mv * .5);      // 每踏一步濺起水聲
   player.y = EYE + Math.sin(bobT) * .028 * mv * (1 - ads * .7);
   return mv;
 }
@@ -1742,7 +1799,7 @@ function frame() {
   damageFx = Math.max(0, damageFx - dt * 1.3);
   finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < perk.maxHp * .3 ? .3 : 0);
   finalPass.uniforms.uTime.value = t;
-  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2.5, 8); sfx.drip(); } }
+  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(.7, 3.2); sfx.drip(); } }
   if (remote.live) { if (!remoteLive()) remoteLost(); else if (performance.now() > remote.sendT) { remote.sendT = performance.now() + 200; remoteStatus(); } }   // 用實際時間計時，主機掉幀時也不會讓手機誤判斷線
 
   composer.render(dt);
