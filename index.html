@@ -691,61 +691,89 @@ function setPScale() {
 }
 addEventListener('resize', resize); addEventListener('orientationchange', () => setTimeout(resize, 250)); resize();
 
-/* ───────────────────────── 音效（WebAudio 合成） ───────────────────────── */
-let ac = null, master, fx, noiseBuf;
+/* ───────────────────────── 音效（真實錄音 + 模擬地下室殘響） ─────────────────────────
+   sfx/sfx.mp3 是把 51 段 CC0 錄音接成一條的「音效條」，SMAP 記錄每段的起點與長度；sfx/drip.mp3、sfx/drone.mp3 是環境音迴圈。
+   音檔載入失敗（例如直接開本機檔案）時，會退回程式合成的簡易音效。 */
+const SMAP = {"shot0":[0.6,0.9911],"shot1":[1.6711,0.5877],"shot2":[2.3388,1.4918],"shot3":[3.9106,1.8906],"magout":[5.8812,0.5],"magin":[6.4612,0.3965],"rack":[6.9377,0.5289],"bolt":[7.5466,0.5077],"pump":[8.1344,0.4963],"shellin":[8.7107,0.443],"cock":[9.2337,0.4189],"casing":[9.7325,0.5303],"stone":[10.3428,0.1869],"metal":[10.6097,0.2408],"flesh1":[10.9305,0.4862],"flesh2":[11.4967,0.4182],"growl1":[11.9949,1.3908],"growl2":[13.4657,1.5092],"growl3":[15.0549,1.0637],"growl4":[16.1986,1.0517],"growl5":[17.3304,0.9088],"growl6":[18.3192,0.9283],"atk1":[19.3274,0.699],"atk2":[20.1064,0.5617],"atk3":[20.7481,0.6345],"atk4":[21.4626,0.6216],"hurt1":[22.1643,0.4602],"hurt2":[22.7045,0.5504],"hurt3":[23.3349,0.3072],"die1":[23.7221,0.8267],"die2":[24.6288,0.7486],"die3":[25.4573,0.779],"moan1":[26.3163,1.5591],"moan2":[27.9554,2.6979],"moan3":[30.7333,1.7],"moan4":[32.5133,2.1],"boss1":[34.6933,1.041],"boss2":[35.8143,1.0669],"step1":[36.9612,0.4173],"step2":[37.4585,0.2619],"step3":[37.8004,0.4697],"step4":[38.3501,0.4053],"step5":[38.8354,0.5424],"step6":[39.4578,0.6287],"land1":[40.1664,0.5161],"land2":[40.7625,0.7866],"drip1":[41.6291,0.4709],"drip2":[42.1799,0.5],"drip3":[42.7599,0.4795],"drip4":[43.3194,0.4991],"drip5":[43.8985,0.4887],"_loops":{"drip":18.6,"drone":32}};
+let ac = null, master, fx, noiseBuf, SB = null, sOff = 0;
+function roomIR() {
+  // 殘響脈衝響應：依這間地下室的尺寸（22×30×3.4 m 的水泥空間）模擬——
+  // 先是地板/天花板之間密集的早期反射與遠牆的回聲，接著是低頻衰減慢、高頻衰減快的擴散尾音
+  const sr = ac.sampleRate, len = Math.floor(sr * 2.8), ir = ac.createBuffer(2, len, sr), C = 343;
+  for (let ch = 0; ch < 2; ch++) {
+    const d = ir.getChannelData(ch); let lo = 0, mid = 0;
+    for (let i = Math.floor(sr * .018); i < len; i++) {
+      const t = i / sr, n = Math.random() * 2 - 1, up = Math.min(1, (t - .018) / .05);
+      lo += (n - lo) * .035; mid += (n - mid) * .32;
+      d[i] = up * (lo * 3.2 * Math.exp(-6.9 * t / 2.6) + (mid - lo) * 1.1 * Math.exp(-6.9 * t / 1.7) + (n - mid) * .5 * Math.exp(-6.9 * t / .7)) * .5;
+    }
+    const tap = (dist, amp) => { const i = Math.floor(dist / C * sr + rand(-20, 20)); for (let k = 0; k < 28; k++) if (i + k < len) d[i + k] += amp * (Math.random() * 2 - 1 + (k < 3 ? 1.5 : 0)) * Math.exp(-k / 7); };
+    for (let k = 1; k <= 7; k++) { tap(3.3 * k + (ch ? .25 : 0), .7 * Math.pow(.8, k)); tap(3.5 * k + .1 + (ch ? 0 : .3), .6 * Math.pow(.8, k)); }   // 地板與天花板來回
+    for (const [dist, a] of [[9.2, .4], [12.5, .3], [22, .34], [30, .3], [37, .2], [44, .18], [52, .15], [60, .13], [74, .09]]) tap(dist + (ch ? 1.1 : 0), a * rand(.7, 1.1));   // 柱子與四面牆的回聲
+  }
+  return ir;
+}
 function initAudio() {
   if (ac) { ac.resume(); return; }
   const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-  ac = new AC(); master = ac.createGain(); master.gain.value = .7;
-  const comp = ac.createDynamicsCompressor(); master.connect(comp); comp.connect(ac.destination);
-  // 地下室殘響：所有音效都送一份進捲積殘響（程式產生的衰減噪音當脈衝響應）
+  ac = new AC(); master = ac.createGain(); master.gain.value = .8;
+  const comp = ac.createDynamicsCompressor(); comp.threshold.value = -14; comp.ratio.value = 6; master.connect(comp); comp.connect(ac.destination);
   fx = ac.createGain(); fx.connect(master);
-  const conv = ac.createConvolver(), ir = ac.createBuffer(2, ac.sampleRate * 2.4, ac.sampleRate), wet = ac.createGain(); wet.gain.value = .32;
-  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < d.length; i++) { const k = 1 - i / d.length; lp += ((Math.random() * 2 - 1) - lp) * (.15 + .5 * k); d[i] = lp * k * k * k; } }
-  conv.buffer = ir; fx.connect(conv); conv.connect(wet); wet.connect(comp);
+  const conv = ac.createConvolver(), wet = ac.createGain(); wet.gain.value = .5; conv.buffer = roomIR(); fx.connect(conv); conv.connect(wet); wet.connect(comp);
   noiseBuf = ac.createBuffer(1, ac.sampleRate, ac.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  // 環境：低頻轟鳴 + 電流哼聲
-  const n = ac.createBufferSource(); n.buffer = noiseBuf; n.loop = true; const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 110;
-  const g = ac.createGain(); g.gain.value = .22; n.connect(f); f.connect(g); g.connect(master); n.start();
-  for (const [fr, v] of [[50, .018], [100, .008]]) { const o = ac.createOscillator(); o.frequency.value = fr; const og = ac.createGain(); og.gain.value = v; o.connect(og); og.connect(master); o.start(); }
-  // 積水的細流聲：兩層濾波噪音，音量緩慢起伏
-  for (const [fr, q, v, lf] of [[1500, .8, .016, .13], [3400, 1.6, .007, .31]]) {
-    const w = ac.createBufferSource(); w.buffer = noiseBuf; w.loop = true; w.playbackRate.value = fr > 2000 ? 1.3 : .8;
-    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = fr; bp.Q.value = q; const wg = ac.createGain(); wg.gain.value = v;
-    const l = ac.createOscillator(); l.frequency.value = lf; const lg = ac.createGain(); lg.gain.value = v * .7; l.connect(lg); lg.connect(wg.gain); l.start();
-    w.connect(bp); bp.connect(wg); wg.connect(fx); w.start();
-  }
+  // 很低的空間轟鳴（合成）
+  const n = ac.createBufferSource(); n.buffer = noiseBuf; n.loop = true; const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 90;
+  const g = ac.createGain(); g.gain.value = .12; n.connect(f); f.connect(g); g.connect(master); n.start();
+  const get = u => fetch(u).then(r => { if (!r.ok) throw 0; return r.arrayBuffer(); }).then(b => new Promise((res, rej) => ac.decodeAudioData(b, res, rej)));
+  get('sfx/sfx.mp3').then(b => {
+    // mp3 解碼後開頭會多出一小段延遲（各瀏覽器不同），用檔頭的校正音找出實際偏移量
+    const d = b.getChannelData(0), n = Math.floor(b.sampleRate * .55); let pk = 0, pi = 0; for (let i = 0; i < n; i++) { const a = Math.abs(d[i]); if (a > pk) { pk = a; pi = i; } }
+    sOff = pi / b.sampleRate - .203; SB = b;
+  }).catch(() => { });
+  const loop = (u, L, vol, dest) => get(u).then(b => { const s = ac.createBufferSource(); s.buffer = b; s.loop = true; s.loopStart = .3; s.loopEnd = .3 + L; const lg = ac.createGain(); lg.gain.value = vol; s.connect(lg); lg.connect(dest); s.start(0, .3); }).catch(() => { });
+  loop('sfx/drip.mp3', SMAP._loops.drip, .9, fx);       // 地下室滴水（真實錄音，進殘響）
+  loop('sfx/drone.mp3', SMAP._loops.drone, .5, master);  // 低沉的空間底噪
 }
+// 播放音效條裡的一段；lp>0 時加低通（遠處或隔著東西的聲音）。回傳 false 表示錄音尚未載入
+function play(name, vol = 1, rate = 1, lp = 0, delay = 0) {
+  const m = SMAP[name]; if (!ac || !SB || !m) return false;
+  const s = ac.createBufferSource(), g = ac.createGain(); s.buffer = SB; s.playbackRate.value = rate; g.gain.value = vol;
+  if (lp) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = lp; s.connect(f); f.connect(g); } else s.connect(g);
+  g.connect(fx); s.start(ac.currentTime + delay, Math.max(0, m[0] + sOff), m[1]); return true;
+}
+const pick = (base, n) => base + (1 + (Math.random() * n | 0));
 function noise(dur, type, f0, f1, vol, q = 1) {
   if (!ac) return; const t = ac.currentTime, s = ac.createBufferSource(); s.buffer = noiseBuf; s.playbackRate.value = rand(.85, 1.15);
   const f = ac.createBiquadFilter(); f.type = type; f.Q.value = q; f.frequency.setValueAtTime(f0, t); f.frequency.exponentialRampToValueAtTime(f1, t + dur);
   const g = ac.createGain(); g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
   s.connect(f); f.connect(g); g.connect(fx); s.start(t, rand(.5)); s.stop(t + dur);
 }
-function tone(type, f0, f1, dur, vol, lfo) {
+function tone(type, f0, f1, dur, vol) {
   if (!ac) return; const t = ac.currentTime, o = ac.createOscillator(); o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + dur);
   const g = ac.createGain(); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(vol, t + Math.min(.03, dur * .2)); g.gain.exponentialRampToValueAtTime(.001, t + dur);
-  let out = o;
-  if (lfo) { const f = ac.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 480; o.connect(f); out = f; const l = ac.createOscillator(); l.frequency.value = lfo; const lg = ac.createGain(); lg.gain.value = vol * .6; l.connect(lg); lg.connect(g.gain); l.start(t); l.stop(t + dur); }
-  out.connect(g); g.connect(fx); o.start(t); o.stop(t + dur);
+  o.connect(g); g.connect(fx); o.start(t); o.stop(t + dur);
 }
+const far = v => v > .3 ? 0 : 700 + v * 9000;      // 音量小＝距離遠 → 高頻被吃掉
 const sfx = {
-  shot(w) { const s = w.snd; noise(.22 * s[2], 'lowpass', s[0], 320, .95); noise(.05, 'highpass', 2500, 5000, .4); tone('triangle', s[1], 42, .14 * s[2], .8); },
-  magOut() { noise(.05, 'bandpass', 1800, 900, .35, 3); }, magIn() { noise(.06, 'bandpass', 2600, 1400, .45, 3); },
-  rack() { noise(.05, 'highpass', 2200, 4200, .4); setTimeout(() => noise(.04, 'highpass', 3000, 5000, .35), 90); },
-  casing() { tone('sine', rand(3600, 5600), rand(2400, 3200), .06, .035); }, magHit() { noise(.07, 'bandpass', 1500, 600, .3, 2); tone('triangle', 300, 120, .06, .15); },
-  shell() { noise(.045, 'bandpass', 2200, 1300, .4, 4); }, sw() { noise(.08, 'lowpass', 900, 300, .25); },
-  pump() { noise(.07, 'bandpass', 1300, 700, .5, 2); setTimeout(() => noise(.07, 'bandpass', 900, 1500, .5, 2), 170); },
-  bolt() { noise(.05, 'bandpass', 2400, 1500, .4, 3); setTimeout(() => noise(.05, 'bandpass', 1500, 2600, .4, 3), 260); },
-  dry() { noise(.03, 'highpass', 3000, 6000, .25); },
-  hit() { noise(.09, 'lowpass', 1100, 240, .5); },
-  growl(v = .3) { tone('sawtooth', rand(62, 95), rand(36, 50), rand(.6, 1.1), v, rand(14, 24)); },
-  die() { tone('sawtooth', 120, 30, .7, .32, 28); noise(.3, 'lowpass', 700, 120, .35); },
-  hurt() { tone('sine', 95, 38, .3, .9); noise(.16, 'lowpass', 900, 150, .6); },
-  pick() { tone('sine', 660, 1320, .2, .25); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { noise(.22, 'bandpass', 1100, 300, .3, 2); },
-  drip() { const f = rand(500, 1100), v = rand(.05, .12); tone('sine', f, f * rand(2, 2.8), .055, v); setTimeout(() => tone('sine', f * 1.6, f * 2.6, .04, v * .45), rand(60, 120)); },   // 水滴落進積水
-  step(v) { noise(.2, 'bandpass', rand(650, 1050), 330, .26 * v, .8); noise(.3, 'highpass', 2600, 1300, .045 * v); tone('sine', 75, 46, .09, .1 * v); },   // 踩進積水
-  hop(v) { tone('sine', 95, 42, .14, v); noise(.24, 'bandpass', rand(700, 1000), 380, v * .55, .8); }                                                    // 殭屍落地
+  shot(w) { const i = WEAPONS.indexOf(w); if (!play('shot' + i, i === 1 ? .7 : 1, rand(.97, 1.03))) { const s = w.snd; noise(.22 * s[2], 'lowpass', s[0], 320, .95); tone('triangle', s[1], 42, .14 * s[2], .8); } },
+  magOut() { play('magout', .7) || noise(.05, 'bandpass', 1800, 900, .35, 3); }, magIn() { play('magin', .8) || noise(.06, 'bandpass', 2600, 1400, .45, 3); },
+  rack() { play(cur.spin ? 'rack' : 'bolt', .8) || noise(.05, 'highpass', 2200, 4200, .4); },
+  casing() { play('casing', rand(.1, .2), rand(1.7, 2.4)) || tone('sine', rand(3600, 5600), rand(2400, 3200), .06, .035); },
+  magHit() { play('metal', .5, rand(.6, .8)) || noise(.07, 'bandpass', 1500, 600, .3, 2); },
+  shell() { play('shellin', .7, rand(.95, 1.08)) || noise(.045, 'bandpass', 2200, 1300, .4, 4); }, sw() { play('cock', .3, .8) || noise(.08, 'lowpass', 900, 300, .25); },
+  pump() { play('pump', .9) || noise(.07, 'bandpass', 1300, 700, .5, 2); }, bolt() { play('cock', .8, .85) || noise(.05, 'bandpass', 2400, 1500, .4, 3); },
+  dry() { play('cock', .35, 1.7) || noise(.03, 'highpass', 3000, 6000, .25); },
+  hit() { play(pick('flesh', 2), .8, rand(.9, 1.15)) || noise(.09, 'lowpass', 1100, 240, .5); if (Math.random() < .35) play(pick('hurt', 3), .45, rand(.75, .95)); },
+  wall() { play('stone', .5, rand(.85, 1.3)); },
+  growl(v = .3, boss) { boss ? play(pick('boss', 2), 1, .62) : play(pick('growl', 6), v * 1.6, rand(.72, .95), far(v)) || tone('sawtooth', rand(62, 95), rand(36, 50), rand(.6, 1.1), v); },
+  atk() { play(pick('atk', 4), .7, rand(.8, 1)); },
+  die() { play(pick('die', 3), .75, rand(.72, .92)) || tone('sawtooth', 120, 30, .7, .32); },
+  moan() { play(pick('moan', 4), rand(.12, .22), rand(.7, .9), 650); },      // 遠處黑暗中的呻吟
+  hurt() { tone('sine', 95, 38, .3, .9); play(pick('flesh', 2), 1, .7) || noise(.16, 'lowpass', 900, 150, .6); },
+  pick() { tone('sine', 660, 1320, .2, .25); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { play('step3', .5, .6) || noise(.22, 'bandpass', 1100, 300, .3, 2); },
+  drip() { play(pick('drip', 5), rand(.25, .7), rand(.75, 1.35)); },                                                         // 近處的水滴
+  step(v) { play(pick('step', 6), .42 * v, rand(.88, 1.12)) || noise(.2, 'bandpass', rand(650, 1050), 330, .26 * v, .8); },   // 踩進積水
+  hop(v) { tone('sine', 95, 42, .14, v * .8); play(pick('land', 2), v * 1.5, rand(.7, .9), far(v)) || noise(.24, 'bandpass', rand(700, 1000), 380, v * .55, .8); }   // 殭屍落地
 };
 
 /* ───────────────────────── 操控 ───────────────────────── */
@@ -1271,7 +1299,7 @@ function spawnEnemy(force) {
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
     ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
-  e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(.7); setTimeout(() => sfx.growl(.6), 350); }
+  e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(1, true); }
   const bones = Z.pivots.map(() => new THREE.Bone());
   Z.pivots.forEach((pv, i) => {
     const par = ZPAR[i], pp = par < 0 ? [0, 0, 0] : Z.pivots[par];
@@ -1356,7 +1384,8 @@ function updateEnemies(dt, t) {
     if (inRange) {
       e.atk += dt;
       if (e.atk > 0) reach += Math.sin(Math.min(1, e.atk / .45) * Math.PI) * .8 - .35 * Math.sin(Math.min(1, e.atk / .2) * Math.PI);     // 先抬手再往下抓
-      if (e.atk >= .45) { e.atk = -.75; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
+      if (e.atk > 0 && !e.atkS) { e.atkS = true; sfx.atk(); }
+      if (e.atk >= .45) { e.atk = -.75; e.atkS = false; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
     } else e.atk = Math.min(e.atk, -.15);
     e.armL.rotation.x = e.armR.rotation.x = reach; e.armL.rotation.z = .05; e.armR.rotation.z = -.05;
     e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
@@ -1400,6 +1429,7 @@ function hitEnemy(e, h, w) {
   return head ? 2 : 1;
 }
 function impact(h) {
+  if (Math.random() < .6) sfx.wall();
   const p = h.point; vN.copy(h.face.normal).transformDirection(h.object.matrixWorld);
   const hole = holes[holeI++ % holes.length]; hole.visible = true; hole.position.copy(p).addScaledVector(vN, .006); hole.lookAt(vPos.copy(p).add(vN)); hole.scale.setScalar(rand(.7, 1.3));
   for (let i = 0; i < 6; i++) sparks.emit(p.x, p.y, p.z, vN.x * rand(1, 4) + rand(-2, 2), vN.y * rand(1, 4) + rand(-1, 3), vN.z * rand(1, 4) + rand(-2, 2), rand(.1, .35), rand(.01, .025), 3, 1.6, .5, 9.8);
@@ -1649,7 +1679,7 @@ $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
-const clock = new THREE.Clock(); let needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, deathTilt = 0, lastUI = -1;
+const clock = new THREE.Clock(); let needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
   const w = cur, P = w.parts, play = state === 'play';
@@ -1799,7 +1829,7 @@ function frame() {
   damageFx = Math.max(0, damageFx - dt * 1.3);
   finalPass.uniforms.uDamage.value = state === 'dead' ? 1 : damageFx + (hp < perk.maxHp * .3 ? .3 : 0);
   finalPass.uniforms.uTime.value = t;
-  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(.7, 3.2); sfx.drip(); } }
+  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2, 6); sfx.drip(); } moanT -= dt; if (moanT < 0) { moanT = rand(10, 24); sfx.moan(); } }
   if (remote.live) { if (!remoteLive()) remoteLost(); else if (performance.now() > remote.sendT) { remote.sendT = performance.now() + 200; remoteStatus(); } }   // 用實際時間計時，主機掉幀時也不會讓手機誤判斷線
 
   composer.render(dt);
@@ -1817,7 +1847,7 @@ document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) 
 qBase.identity(); setWeapon(0);
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
