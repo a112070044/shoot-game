@@ -166,6 +166,7 @@
   </div>
   <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
   <div class="help" id="help"></div>
+  <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
 </div>
 <div class="screen hide" id="perks">
   <div class="sub" style="margin-bottom:16px;opacity:.8">選擇一項強化</div>
@@ -1276,11 +1277,116 @@ function updateDebris(dt) {
   }
 }
 
+/* ───────────────────────── 外部模型（Sketchfab 下載的殭屍，作者與授權見 README） ─────────────────────────
+   models/z1~z4.glb 已減面、壓縮貼圖。3 號自帶走路動作；1、2、4 號是 Mixamo 骨架，走路與攻擊由程式直接驅動骨頭。
+   模型還沒載入完成（或載入失敗）時，這些敵人會先用清朝殭屍代替。 */
+const EXT = {
+  z1: { url: 'models/z1.glb' },
+  z2: { url: 'models/z2.glb' },
+  z3: { url: 'models/z3.glb', clip: true },
+  z4: { url: 'models/z4.glb' }
+};
+const bkey = n => n.replace(/^mixamorig:?/, '').replace(/^Bone_SM_/, '').replace(/_\d+$/, '');
+const BONES = {
+  hips: /^(Hips|Pelvis)$/, spine: /^(Spine2|Spine1|Spine)$/, neck: /^Neck$/, head: /^Head$/, top: /^HeadTop_End$/,
+  upL: /^(LeftUpLeg|Thigh_L)$/, legL: /^(LeftLeg|Calf_L)$/, footL: /^(LeftFoot|Ankle_L)$/, armL: /^(LeftArm|UpperArm_L)$/, foreL: /^(LeftForeArm|ForeArm_L)$/, handL: /^(LeftHand|Hand_L)$/,
+  upR: /^(RightUpLeg|Thigh_R)$/, legR: /^(RightLeg|Calf_R)$/, footR: /^(RightFoot|Ankle_R)$/, armR: /^(RightArm|UpperArm_R)$/, foreR: /^(RightForeArm|ForeArm_R)$/, handR: /^(RightHand|Hand_R)$/
+};
+function findBones(root) {
+  const all = []; root.traverse(o => { if (o.isBone) all.push(o); });
+  const out = {};
+  for (const k in BONES) {
+    const c = all.filter(b => BONES[k].test(bkey(b.name)));
+    if (k === 'spine') out[k] = c.sort((a, b) => bkey(b.name).localeCompare(bkey(a.name)))[0];     // 優先用最上面的 Spine2
+    else out[k] = c[0];
+  }
+  return out;
+}
+const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
+function loadExtModels() {
+  if (location.protocol === 'file:') return;
+  Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/utils/SkeletonUtils.js')]).then(([{ GLTFLoader }, { MeshoptDecoder }, SU]) => {
+    EXT.SU = SU; const L = new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
+    for (const id in EXT) {
+      const M = EXT[id]; if (!M.url) continue;
+      L.load(M.url, g => {
+        const model = g.scene; model.traverse(o => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; o.frustumCulled = false; } });
+        if (M.clip && g.animations[0]) M.anim = g.animations[0];
+        // 正規化：腳底貼地、身高 1.75 m、水平置中
+        const wrap = new THREE.Group(); wrap.add(model); wrap.updateMatrixWorld(true);
+        const box = new THREE.Box3().setFromObject(wrap, true), s = 1.75 / (box.max.y - box.min.y), c = box.getCenter(new THREE.Vector3());
+        model.position.set(-c.x, -box.min.y, -c.z).multiplyScalar(s).add(model.position.clone().multiplyScalar(s - 1)); model.scale.multiplyScalar(s);
+        const proto = new THREE.Group(); proto.add(wrap); proto.updateMatrixWorld(true);
+        // 命中判定框：掛在骨頭上，跟著動作移動
+        const B = findBones(proto), hits = [];
+        const seg = (a, b, thick, head) => {
+          if (!a || !b) return; a.getWorldPosition(_v1); b.getWorldPosition(_v2); a.getWorldScale(_v3);
+          const len = _v1.distanceTo(_v2); _v2.sub(_v1).normalize();
+          a.getWorldQuaternion(_q1); const dirL = _v2.clone().applyQuaternion(_q1.invert());
+          const mid = b.position.clone().multiplyScalar(.5);
+          hits.push({ bone: a.name, pos: mid, quat: new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), dirL), scl: 1 / _v3.x, geo: new THREE.BoxGeometry(thick, len + thick * .4, thick * .85), head });
+        };
+        seg(B.head, B.top, .24, true); if (!B.top && B.head) { B.head.getWorldScale(_v3); hits.push({ bone: B.head.name, pos: new THREE.Vector3(0, .1 / _v3.x, 0), quat: new THREE.Quaternion(), scl: 1 / _v3.x, geo: new THREE.BoxGeometry(.24, .26, .24), head: true }); }
+        seg(B.hips, B.neck, .42, false);
+        for (const sd of ['L', 'R']) { seg(B['up' + sd], B['leg' + sd], .2); seg(B['leg' + sd], B['foot' + sd], .15); seg(B['arm' + sd], B['fore' + sd], .13); seg(B['fore' + sd], B['hand' + sd], .12); }
+        M.proto = proto; M.hits = hits;
+        // 預先編譯著色器，避免第一隻出現時卡頓
+        const tmp = SU.clone(proto); tmp.position.set(0, -50, 0); scene.add(tmp); try { renderer.compile(scene, camera); } catch (err) { } scene.remove(tmp);
+      }, undefined, () => { });
+    }
+  }).catch(() => { });
+}
+function buildExtEnemy(e, id, tint) {
+  const M = EXT[id], inst = EXT.SU.clone(M.proto); e.body.add(inst); e.ext = id;
+  e.mats = []; inst.traverse(o => { if (o.isMesh) { o.material = o.material.clone(); if (tint) o.material.color.multiply(tint); o.material.emissive = new THREE.Color(0); e.mats.push(o.material); } });
+  e.skels = []; inst.traverse(o => { if (o.isSkinnedMesh && !e.skels.includes(o.skeleton)) e.skels.push(o.skeleton); });
+  const byName = {}; inst.traverse(o => { if (o.isBone) byName[o.name] = o; });
+  for (const h of M.hits) { const b = byName[h.bone]; if (!b) continue; const m = new THREE.Mesh(h.geo, hitMat); m.position.copy(h.pos); m.quaternion.copy(h.quat); m.scale.setScalar(h.scl); m.userData.e = e; m.userData.head = h.head; b.add(m); e.meshes.push(m); }
+  e.B = findBones(inst); e.head = e.B.head || new THREE.Object3D();
+  if (M.anim) { e.mixer = new THREE.AnimationMixer(inst); e.action = e.mixer.clipAction(M.anim); e.action.time = rand(M.anim.duration); e.action.play(); }
+  else {   // 記下骨頭靜止姿勢與左右邊，程式步態每格從這裡出發
+    e.rest = new Map(); for (const k of ['spine', 'head', 'upL', 'legL', 'armL', 'foreL', 'upR', 'legR', 'armR', 'foreR']) if (e.B[k]) e.rest.set(e.B[k], e.B[k].quaternion.clone());
+  }
+}
+// 把骨頭 a 轉到「從 a 指向子骨頭 b」的方向等於 dir（dir 是敵人自身座標：+Z 向前、+Y 向上）
+function aimBone(e, a, b, dir) {
+  if (!a || !b) return;
+  a.getWorldPosition(_v1); b.getWorldPosition(_v2); _v2.sub(_v1).normalize();
+  e.body.getWorldQuaternion(_q3); _v3.copy(dir).normalize().applyQuaternion(_q3);
+  _q1.setFromUnitVectors(_v2, _v3); a.getWorldQuaternion(_q2); _q1.multiply(_q2);
+  a.parent.getWorldQuaternion(_q2); a.quaternion.copy(_q2.invert().multiply(_q1)); a.updateMatrixWorld(true);
+}
+const _d = new THREE.Vector3();
+function poseExt(e, dt, t, going, atkU) {
+  if (e.mixer) {       // 3 號：自帶走路動作，攻擊時加快並前撲
+    e.action.timeScale = going ? e.speed / e.T.speed * 1.15 : (atkU >= 0 ? 2.2 : .25);
+    e.mixer.update(dt); e.body.rotation.x = atkU >= 0 ? Math.sin(atkU * Math.PI) * .35 : 0; return;
+  }
+  const B = e.B; for (const [b, q] of e.rest) b.quaternion.copy(q); e.root.updateMatrixWorld(true);
+  const stride = going ? 1 : .15, s = Math.sin(t * 1.3 + e.sd);
+  aimBone(e, B.spine, B.neck, _d.set(s * .05, 1, .28 + (atkU >= 0 ? Math.sin(atkU * Math.PI) * .4 : 0)));                 // 上身前傾
+  aimBone(e, B.head, B.top, _d.set(e.side * .25 + s * .08, 1, .3));                                                       // 頭歪一邊
+  const raise = atkU >= 0 ? (atkU < .45 ? atkU / .45 * 1.2 : 1.2 - (atkU - .45) / .55 * 2) : 0;                            // 攻擊：雙手舉高再往下抓
+  for (const [sd, sg, ph] of [['L', 1, e.ph], ['R', -1, e.ph + Math.PI]]) {
+    const sw = Math.sin(ph) * stride, knee = Math.max(0, Math.cos(ph)) * .9 * stride + .12;
+    aimBone(e, B['up' + sd], B['leg' + sd], _d.set(sg * .07, -1, sw * .6 + .05));
+    aimBone(e, B['leg' + sd], B['foot' + sd], _d.set(sg * .03, -1, sw * .6 - knee));
+    const lag = sd === 'L' ? e.sd : e.sd + 1.7;
+    aimBone(e, B['arm' + sd], B['fore' + sd], _d.set(sg * .2, -.15 + raise + Math.sin(t * 1.9 + lag) * .08 - sw * .1, 1));   // 雙手往前伸
+    aimBone(e, B['fore' + sd], B['hand' + sd], _d.set(sg * .05, -.25 + raise * .7, 1));
+  }
+  e.body.position.y = Math.abs(Math.cos(e.ph)) * .035 * stride; e.body.position.z = atkU >= 0 ? Math.sin(atkU * Math.PI) * .18 : 0;
+}
+
 /* ───────────────────────── 怪物 ───────────────────────── */
 const TYPES = {   // robe：官服顏色；hop：每秒跳幾下；hh：跳多高
   walker: { build: 'normal', tint: [1, 1, 1], robe: [.016, .024, .055], hop: 2.1, hh: .16, hp: 4, speed: 1.45, scale: 1, dmg: 10, eye: [1.76, 0.14, 0.06], lean: .06, score: 100 },
-  runner: { build: 'thin', tint: [1.05, .9, .85], robe: [.11, .012, .012], hop: 3.4, hh: .2, hp: 2.5, speed: 3.3, scale: .86, dmg: 7, eye: [1.65, 1.21, 0.11], lean: .16, score: 150 },
-  brute: { build: 'bulk', tint: [.85, .9, 1], robe: [.012, .045, .028], hop: 1.6, hh: .1, hp: 13, speed: 1.05, scale: 1.38, dmg: 22, eye: [1.87, 0.55, 0.06], lean: .05, score: 400 },
+  runner: { model: 'z3', fb: 'runnerJ', hp: 2.5, speed: 3.3, scale: 1, dmg: 7, score: 150 },                       // 3 號：駝背快跑的怪物
+  brute: { model: 'z4', fb: 'bruteJ', hp: 13, speed: 1.05, scale: 1.3, dmg: 22, score: 400 },                       // 4 號：手臂帶刺的壯漢
+  corpse: { model: ['z1', 'z2'], fb: 'walker', hp: 4.5, speed: 1.25, scale: 1, dmg: 12, score: 120 },             // 1、2 號：屍變的乾屍與焦屍
+  tyrant: { model: 'z4', fb: 'boss', tint: [.55, .4, .4], hp: 80, speed: 1.15, scale: 1.75, dmg: 32, score: 2200, boss: true },   // 巨型首領（第 5、15、25…波）
+  runnerJ: { build: 'thin', tint: [1.05, .9, .85], robe: [.11, .012, .012], hop: 3.4, hh: .2, hp: 2.5, speed: 3.3, scale: .86, dmg: 7, eye: [1.65, 1.21, 0.11], lean: .16, score: 150 },
+  bruteJ: { build: 'bulk', tint: [.85, .9, 1], robe: [.012, .045, .028], hop: 1.6, hh: .1, hp: 13, speed: 1.05, scale: 1.38, dmg: 22, eye: [1.87, 0.55, 0.06], lean: .05, score: 400 },
   spitter: { build: 'fat', tint: [.75, 1.08, .7], robe: [.05, .016, .075], hop: 2.3, hh: .14, hp: 3, speed: 1.7, scale: .95, dmg: 9, eye: [0.22, 1.76, 0.28], lean: .1, score: 200, spit: true },   // 遠距離吐酸液
   boss: { build: 'bulk', tint: [.6, .55, .65], robe: [.32, .21, .025], hop: 1.8, hh: .12, hp: 70, speed: 1.3, scale: 1.65, dmg: 30, eye: [1.43, 1.54, 1.98], lean: .05, score: 2000, boss: true }   // 明黃龍袍
 };
@@ -1289,17 +1395,30 @@ const SPAWNS = [
   { sx: -W / 2 - 6, sz: 0, wx: -W / 2 + 1.4, wz: 0 }, { sx: W / 2 + 6, sz: 0, wx: W / 2 - 1.4, wz: 0 }
 ];
 function spawnEnemy(force) {
-  const r = Math.random(), tn = force || (wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .42 ? 'runner' : wave >= 3 && r > .85 ? 'spitter' : 'walker'), T = TYPES[tn];
+  const r = Math.random();
+  let tn = force || (wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .38 ? 'runner' : wave >= 3 && r > .86 ? 'spitter' : wave >= 2 && r > .62 ? 'corpse' : 'walker');
+  let mid = TYPES[tn].model; if (Array.isArray(mid)) mid = mid[rand(mid.length) | 0];
+  if (mid && !(EXT[mid].proto && EXT.SU)) { tn = TYPES[tn].fb; mid = null; }        // 模型還沒載入：先用清朝殭屍代替
+  const T = TYPES[tn];
   // 優先從玩家看不到/較遠的門湧出
   const sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s;
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
-  const Z = ZB[T.build], v = () => rand(.88, 1.06);
-  const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72, color: new THREE.Color(T.tint[0] * v(), T.tint[1] * v(), T.tint[2] * v()) });
-  mat.userData = { robe: new THREE.Color(T.robe[0], T.robe[1], T.robe[2]), sh: Z.sh - .035 }; mat.onBeforeCompile = robeShader; mat.customProgramCacheKey = () => 'robe';
-  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...T.eye), fog: false });
+  const Z = mid ? null : ZB[T.build], v = () => rand(.88, 1.06);
+  let mat = null; if (!mid) {
+    mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: .72, color: new THREE.Color(T.tint[0] * v(), T.tint[1] * v(), T.tint[2] * v()) });
+    mat.userData = { robe: new THREE.Color(T.robe[0], T.robe[1], T.robe[2]), sh: Z.sh - .035 }; mat.onBeforeCompile = robeShader; mat.customProgramCacheKey = () => 'robe';
+  }
+  const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...(T.eye || [0, 0, 0])), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + wave * .06), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
     ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
   e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(1, true); }
+  e.side = Math.random() < .5 ? -1 : 1; e.sd = rand(6.28); e.hy = 0;
+  if (mid) {
+    buildExtEnemy(e, mid, T.tint ? new THREE.Color(...T.tint) : new THREE.Color(v(), v(), v()));
+    root.scale.setScalar(T.scale); root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
+    if (Math.random() < .5) sfx.growl(.22); return;
+  }
+  e.mats = [mat];
   const bones = Z.pivots.map(() => new THREE.Bone());
   Z.pivots.forEach((pv, i) => {
     const par = ZPAR[i], pp = par < 0 ? [0, 0, 0] : Z.pivots[par];
@@ -1309,10 +1428,10 @@ function spawnEnemy(force) {
   e.skel = new THREE.Skeleton(bones, Z.inv); skin.bind(e.skel, IDENT);
   for (const h of Z.hit) { const m = new THREE.Mesh(h.geo, hitMat); m.position.set(h.c[0], h.c[1], h.c[2]); m.userData.e = e; m.userData.head = h.head; bones[h.b].add(m); e.meshes.push(m); }
   [e.hips, e.torso, e.head, e.armL, e.foreL, e.armR, e.foreR, e.legL, e.shinL, e.legR, e.shinR] = bones;
-  e.torso.rotation.x = T.lean; e.head.rotation.x = -T.lean * .8; e.side = Math.random() < .5 ? -1 : 1;
+  e.torso.rotation.x = T.lean; e.head.rotation.x = -T.lean * .8; e.skels = [e.skel];
   for (const sx of [-.031, .031]) { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(sx, .143, .071); e.head.add(m); }
   if (!T.boss && Math.random() < .75) { e.fu = new THREE.Mesh(fuGeo, fuMat); e.fu.position.set(0, .2, .118); e.head.add(e.fu); }     // 多數殭屍額頭貼著符
-  e.sd = rand(6.28); e.hy = 0; root.scale.setScalar(T.scale);
+  root.scale.setScalar(T.scale);
   root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
   if (Math.random() < .5) sfx.growl(.22);
 }
@@ -1329,17 +1448,18 @@ function killEnemy(e, headshot, dir) {
   const p = pools[poolI++ % pools.length]; p.visible = true; p.position.set(e.x + dir.x * .9, .012 + (poolI % 12) * .0006, e.z + dir.z * .9); p.scale.setScalar(.15); p.userData.g = rand(.7, 1.25) * e.T.scale; p.rotation.y = rand(6);
   hud();
 }
-function removeEnemy(e) { scene.remove(e.root); e.skel.dispose(); e.mat.dispose(); e.eyeMat.dispose(); enemies.splice(enemies.indexOf(e), 1); }
+function removeEnemy(e) { scene.remove(e.root); for (const k of e.skels) k.dispose(); for (const m of e.mats) m.dispose(); e.eyeMat.dispose(); enemies.splice(enemies.indexOf(e), 1); }
 
 function updateEnemies(dt, t) {
   let alive = 0;
   for (let i = enemies.length - 1; i >= 0; i--) {
     const e = enemies[i];
-    if (e.flash > 0) { e.flash = Math.max(0, e.flash - dt * 6); e.mat.emissive.setRGB(e.flash * .22, e.flash * .03, e.flash * .02); }
+    if (e.flash > 0) { e.flash = Math.max(0, e.flash - dt * 6); for (const m of e.mats) m.emissive.setRGB(e.flash * .22, e.flash * .03, e.flash * .02); }
     if (e.dead) {
       e.deadT += dt; const k = Math.min(1, e.deadT / .5);
       e.body.rotation.x = -k * k * Math.PI / 2; e.body.position.y = k * .11; const q = Math.min(1, dt * 5);
-      e.head.rotation.y += (e.side * .5 - e.head.rotation.y) * q;      // 直挺挺地倒下，手還舉著
+      if (!e.ext) e.head.rotation.y += (e.side * .5 - e.head.rotation.y) * q;      // 直挺挺地倒下，手還舉著
+      else e.body.position.z = 0;
       e.x += e.kx * dt; e.z += e.kz * dt; e.kx *= Math.exp(-dt * 5); e.kz *= Math.exp(-dt * 5);
       if (e.deadT > 5) e.root.position.y -= dt * .25;
       e.root.position.x = e.x; e.root.position.z = e.z;
@@ -1365,7 +1485,7 @@ function updateEnemies(dt, t) {
     }
     e.stun = Math.max(0, e.stun - dt);
     const hold = e.T.spit && e.mode === 'chase' && dist < 6.5;
-    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1) * 1.57 * Math.abs(Math.sin(e.ph));      // 只有騰空時才前進
+    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1) * (e.ext ? 1 : 1.57 * Math.abs(Math.sin(e.ph)));      // 清朝殭屍只有騰空時才前進
     if (e.T.spit && e.mode === 'chase' && dist < 12 && state === 'play') { e.spitT -= dt; if (e.spitT <= 0) { e.spitT = rand(2.2, 3.4); spit(e); } }
     e.x += (vx * sp + e.kx) * dt; e.z += (vz * sp + e.kz) * dt; e.kx *= Math.exp(-dt * 9); e.kz *= Math.exp(-dt * 9);
     if (e.mode === 'chase') {
@@ -1375,6 +1495,19 @@ function updateEnemies(dt, t) {
     // 朝向與動作
     let dr = Math.atan2(dx, dz) - e.rot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); e.rot += dr * Math.min(1, dt * 7);
     e.root.position.set(e.x, 0, e.z); e.root.rotation.y = e.rot;
+    if (e.ext) {      // 外部模型：連續走路，步伐聲較輕
+      const going = !(inRange || hold), ph0 = e.ph; e.ph += dt * (going ? e.speed * 2.6 / e.T.scale * (e.stun > 0 ? .3 : 1) : 0);
+      if (Math.floor(e.ph / Math.PI) !== Math.floor(ph0 / Math.PI) && dist < 10 && state === 'play') sfx.step(clamp(.5 - dist * .05, .05, .45) * e.T.scale);
+      let atkU = -1;
+      if (inRange) {
+        e.atk += dt; if (e.atk > 0) atkU = Math.min(1, e.atk / .55);
+        if (e.atk > 0 && !e.atkS) { e.atkS = true; sfx.atk(); }
+        if (e.atk >= .55) { e.atk = -.7; e.atkS = false; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); }
+      } else e.atk = Math.min(e.atk, -.15);
+      poseExt(e, dt, t, going, atkU);
+      e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
+      continue;
+    }
     const ph0 = e.ph, going = !(inRange || hold); e.ph += dt * e.T.hop * Math.PI * (going ? (e.stun > 0 ? .3 : 1) : 0);
     if (Math.floor(e.ph / Math.PI) !== Math.floor(ph0 / Math.PI) && dist < 12 && state === 'play') sfx.hop(clamp(.55 - dist * .045, .04, .5));   // 落地聲
     e.hy += ((going ? Math.abs(Math.sin(e.ph)) : 0) - e.hy) * Math.min(1, dt * 14); const s = Math.sin(t * 1.7 + e.sd);
@@ -1806,7 +1939,7 @@ function frame() {
       if (spawnT <= 0 && alive < Math.min(12, 5 + wave)) { spawnEnemy(); spawnT = Math.max(.4, 1.5 - wave * .13) * rand(.7, 1.3); }
       const sec = Math.ceil(timeLeft); if (sec !== lastSec) { lastSec = sec; hud(); }
       if (timeLeft <= 0) gameOver(true);
-    } else if (toSpawn > 0) { spawnT -= dt; if (spawnT <= 0 && alive < Math.min(12, 4 + wave)) { spawnEnemy(bossPending ? 'boss' : undefined); bossPending = false; toSpawn--; spawnT = Math.max(.55, 2.3 - wave * .16) * rand(.7, 1.3); } }
+    } else if (toSpawn > 0) { spawnT -= dt; if (spawnT <= 0 && alive < Math.min(12, 4 + wave)) { spawnEnemy(bossPending ? (wave % 10 === 5 ? 'tyrant' : 'boss') : undefined); bossPending = false; toSpawn--; spawnT = Math.max(.55, 2.3 - wave * .16) * rand(.7, 1.3); } }
     else if (alive === 0 && waveGap <= 0) { waveGap = 1.6; showBanner('暫時安靜了…', 1400); }
     if (waveGap > 0 && state === 'play') { waveGap -= dt; if (waveGap <= 0) { hp = Math.min(perk.maxHp, hp + 15); hud(); offerPerks(); } }
     if (comboT > 0) { comboT -= dt; if (comboT <= 0) { comboN = 0; $('combo').textContent = ''; } }
@@ -1844,10 +1977,10 @@ function frame() {
   }
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
-qBase.identity(); setWeapon(0);
+qBase.identity(); setWeapon(0); loadExtModels();
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>

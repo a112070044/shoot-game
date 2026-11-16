@@ -27,3 +27,18 @@
 | 彈殼落地（銅板聲升調） | Coin Drop | — |
 
 殘響不是錄音，而是依地下室尺寸（22×30×3.4 m）以程式模擬的脈衝響應。
+
+## 3D 模型來源
+
+`models/` 內的模型下載自 Sketchfab，已減面、縮小並壓縮貼圖後使用：
+
+| 檔案 | 遊戲中的角色 | 原作 | 作者 | 授權 |
+|---|---|---|---|---|
+| `z1.glb` | 屍變（乾屍） | [Zombie](https://sketchfab.com/3d-models/zombie-6ff73b06cf63405d9557720c78cf5e0c) | [David Glynch](https://sketchfab.com/yaveselyigolovastic) | Sketchfab Standard |
+| `z2.glb` | 屍變（焦屍） | [Zombie](https://sketchfab.com/3d-models/zombie-95ea4fdb12314e3f96963a0c99fe4f4d) | [Gowo.Stoyanov](https://sketchfab.com/Gowo.Stoyanov) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+| `z3.glb` | 快速型 | [Zombie Monster Walk](https://sketchfab.com/3d-models/zombie-monster-walk-a271cc8970384f5b807a73fb7d1fe09e) | [LostBoyz2078](https://sketchfab.com/LostModels2025) | [CC BY-NC 4.0](http://creativecommons.org/licenses/by-nc/4.0/)（**不可商用**） |
+| `z4.glb` | 重型、巨型首領 | [Meaty zombie](https://sketchfab.com/3d-models/meaty-zombie-a024c6592c85493ea36f66e74903736f) | [Karabas Studio](https://sketchfab.com/Alexei777) | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) |
+
+修改內容：減少多邊形數量、貼圖縮小為 1024×1024 並轉為 WebP、移除地板平面與多餘的貼圖座標。走路與攻擊動作（z1、z2、z4）由遊戲程式驅動骨架產生。
+
+清朝殭屍與槍枝模型由程式產生，不使用外部素材。
