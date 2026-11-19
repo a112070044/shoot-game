@@ -76,7 +76,7 @@
   #qr img{width:min(60vmin,280px);height:auto;image-rendering:pixelated;border-radius:4px;display:block}
   #pairUrl{margin-top:10px;font-size:11px;opacity:.5;word-break:break-all;max-width:420px;user-select:text;-webkit-user-select:text}
   #pairMsg{margin:14px 0 10px;font-size:15px;letter-spacing:.08em;min-height:1.4em}
-  #modes{display:flex;gap:8px;margin-bottom:8px}
+  #modes,#maps{display:flex;gap:8px;margin-bottom:8px}
   .chip{min-width:0;margin:0;padding:8px 16px;font-size:14px;background:transparent;border-color:rgba(230,220,196,.3)}
   .chip.on{background:rgba(185,58,44,.45);border-color:rgba(230,220,196,.7)}
   #modeDesc{font-size:12px;opacity:.6;margin-bottom:14px;max-width:440px;line-height:1.7;min-height:1.7em}
@@ -183,6 +183,7 @@
   <div class="sub">B2 · 燈快熄了</div>
   <div id="loadMsg">載入中…</div>
   <div id="modes"></div>
+  <div id="maps"></div>
   <div id="modeDesc"></div>
   <div id="starts">
     <button id="bGyro">開始 · 陀螺儀瞄準</button>
@@ -190,7 +191,7 @@
     <button id="bRemote" class="alt">手機當遙控器 · 掃 QR Code</button>
   </div>
   <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
-  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label></div>
+  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label><label class="chk" id="aoLbl"><input type="checkbox" id="aoOn">環境光遮蔽</label></div>
   <div class="help" id="help"></div>
   <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
 </div>
@@ -431,7 +432,7 @@ function dataTex(data, S, srgb) {
 }
 // kind: 'floor'（積水）、'wall'（模板縫、水痕、牆腳返潮；v 方向只鋪一次）、'ceil'
 function makeConcrete(S, seed, kind) {
-  const { n, fbm, r } = makeNoise(seed), P = S * S;
+  const { n, fbm, r } = makeNoise(seed), P = S * S, tvar = Array.from({ length: 64 }, () => r());
   const Hh = new Float32Array(P), wet = new Float32Array(P), dark = new Float32Array(P), cav = new Float32Array(P),
     fineA = new Float32Array(P), tintA = new Float32Array(P);
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
@@ -440,6 +441,7 @@ function makeConcrete(S, seed, kind) {
     Hh[i] = base * .55 + fine * .3 + r() * .07; fineA[i] = fine;
     dark[i] = smooth(.5, .72, fbm(u + .37, v + .11, 3, 4)) * .4;
     if (kind === 'floor') wet[i] = smooth(.53, .63, fbm(u + .7, v + .2, 3, 3));
+    else if (kind === 'tile') { const ts = S / 8, row = (y / ts) | 0, col = ((x + (row & 1) * ts / 2) / ts) | 0; dark[i] += tvar[(row * 9 + col) % 64] * .3; wet[i] = smooth(.6, .7, fbm(u + .7, v + .2, 3, 3)) * .7; }
     else if (kind === 'wall') {
       const streak = smooth(.55, .85, n(u * 28, v * 2 + 9, 28, 256)) * smooth(.15, .9, v);
       const damp = smooth(.34, 0, v + (fbm(u, v, 8, 2) - .5) * .25);
@@ -467,21 +469,25 @@ function makeConcrete(S, seed, kind) {
       if (d < S / 110) cav[i] = Math.max(cav[i], .9);
     }
   }
-  for (let i = 0; i < P; i++) { Hh[i] -= cav[i] * .5; if (kind === 'floor') Hh[i] = Hh[i] * (1 - wet[i] * .93) + .25 * wet[i]; }
+  if (kind === 'tile') { // 石板接縫（每排錯開半塊）
+    const ts = S / 8;
+    for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) { const i = y * S + x, xx = (x + (((y / ts) | 0) & 1) * ts / 2) % ts, yy = y % ts, e = Math.min(xx, yy, ts - xx, ts - yy); if (e < 3) cav[i] = Math.max(cav[i], e < 1.5 ? .85 : .4); }
+  }
+  for (let i = 0; i < P; i++) { Hh[i] -= cav[i] * .5; if (kind === 'floor' || kind === 'tile') Hh[i] = Hh[i] * (1 - wet[i] * .93) + .25 * wet[i]; }
   const col = new Uint8Array(P * 4), nor = new Uint8Array(P * 4), orm = new Uint8Array(P * 4);
-  const ns = kind === 'floor' ? 3.4 : 2.8, at = (x, y) => Hh[((y + S) % S) * S + (x + S) % S];
+  const ns = kind === 'floor' || kind === 'tile' ? 3.4 : 2.8, at = (x, y) => Hh[((y + S) % S) * S + (x + S) % S];
   for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) {
     const i = y * S + x, j = i * 4;
     let nx = -(at(x + 1, y) - at(x - 1, y)) * ns, ny = -(at(x, y + 1) - at(x, y - 1)) * ns, nz = 1 / (S / 256);
     const l = Math.hypot(nx, ny, nz); nx /= l; ny /= l; nz /= l;
     nor[j] = nx * 127.5 + 127.5; nor[j + 1] = ny * 127.5 + 127.5; nor[j + 2] = nz * 127.5 + 127.5; nor[j + 3] = 255;
     let c = .52 + (Hh[i] - .4) * .45 + (fineA[i] - .5) * .12;
-    c *= (1 - dark[i]) * (1 - cav[i] * .65) * (1 - wet[i] * (kind === 'floor' ? .5 : .25));
+    c *= (1 - dark[i]) * (1 - cav[i] * .65) * (1 - wet[i] * (kind === 'floor' || kind === 'tile' ? .5 : .25));
     let R = c, G = c * .985, B = c * .93;
     const t = tintA[i];
     if (t > 0) { R *= 1 - t * .22; B *= 1 - t * .25; } else if (t < 0) { G *= 1 + t * .28; B *= 1 + t * .5; }
     col[j] = clamp(R, 0, 1) * 255; col[j + 1] = clamp(G, 0, 1) * 255; col[j + 2] = clamp(B, 0, 1) * 255; col[j + 3] = 255;
-    const rough = clamp(.93 - wet[i] * (kind === 'floor' ? .82 : .5) + (fineA[i] - .5) * .2 + cav[i] * .1, .07, 1);
+    const rough = clamp(.93 - wet[i] * (kind === 'floor' || kind === 'tile' ? .82 : .5) + (fineA[i] - .5) * .2 + cav[i] * .1, .07, 1);
     orm[j] = (1 - cav[i] * .75) * 255; orm[j + 1] = rough * 255; orm[j + 2] = 0; orm[j + 3] = 255;
   }
   return { map: dataTex(col, S, true), normalMap: dataTex(nor, S), orm: dataTex(orm, S) };
@@ -506,6 +512,7 @@ function woodTex() {
 const mWood = new THREE.MeshStandardMaterial({ map: woodTex(), roughness: .85, normalMap: tCeil.normalMap });
 const mRust = new THREE.MeshStandardMaterial({ color: 0x4b3226, roughness: .7, metalness: .55, normalMap: tCeil.normalMap, roughnessMap: tCeil.orm });
 const mMetalDark = new THREE.MeshStandardMaterial({ color: 0x1c2420, roughness: .5, metalness: .6 });
+const mLacq = new THREE.MeshStandardMaterial({ color: 0x140806, roughness: .4, normalMap: tCeil.normalMap, normalScale: new THREE.Vector2(.3, .3) });
 
 /* ───────────────────────── 場景幾何 ───────────────────────── */
 const solids = [];            // 子彈可擊中的靜態物件
@@ -514,17 +521,21 @@ function boxUV(geo, w, h, d, tile, vOff = 0) {
   const uv = geo.attributes.uv, dims = [[d, h], [d, h], [w, d], [w, d], [w, h], [w, h]];
   for (let f = 0; f < 6; f++) for (let k = 0; k < 4; k++) { const i = f * 4 + k; uv.setXY(i, uv.getX(i) * dims[f][0] / tile, uv.getY(i) * dims[f][1] / tile + vOff); }
 }
+// 地圖：共用外殼（地板、天花板、牆、門）＋各自的擺設、障礙物、燈。curParent / curSolids 決定新物件放到哪張地圖
+const MAPS = { basement: { n: '地下室', g: new THREE.Group(), solids: [], obstacles: [], lamps: [] }, yizhuang: { n: '義莊', g: new THREE.Group(), solids: [], obstacles: [], lamps: [], built: false } };
+const SHELL = { solids: [], walls: [] }; let curParent = scene, curSolids = solids, curMap = 'basement';
 function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
   const g = new THREE.BoxGeometry(w, h, d); boxUV(g, w, h, d, tile, vOff);
   const m = new THREE.Mesh(g, mat); m.position.set(x, y, z);
-  m.castShadow = shadow; m.receiveShadow = true; scene.add(m); solids.push(m); return m;
+  m.castShadow = shadow; m.receiveShadow = true; curParent.add(m); curSolids.push(m); return m;
 }
 {
   const fg = new THREE.PlaneGeometry(44, 52); fg.rotateX(-Math.PI / 2);
   const uv = fg.attributes.uv; for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * 44 / 5, uv.getY(i) * 52 / 5);
-  const floor = new THREE.Mesh(fg, mFloor); floor.receiveShadow = true; scene.add(floor); solids.push(floor);
+  const floor = new THREE.Mesh(fg, mFloor); floor.receiveShadow = true; scene.add(floor); solids.push(floor); SHELL.floor = floor;
   const cg = fg.clone(); cg.rotateX(Math.PI);
-  const ceil = new THREE.Mesh(cg, mCeil); ceil.position.y = H; ceil.receiveShadow = true; scene.add(ceil); solids.push(ceil);
+  const ceil = new THREE.Mesh(cg, mCeil); ceil.position.y = H; ceil.receiveShadow = true; scene.add(ceil); solids.push(ceil); SHELL.ceil = ceil;
+  const shellStart = solids.length;
 
   const T = .5, hw = W / 2, hd = D / 2, g = DOOR / 2, CL = 8;
   const segX = (x1, x2, z) => addBox(x2 - x1, H, T, (x1 + x2) / 2, H / 2, z, mWall);
@@ -542,6 +553,9 @@ function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
     }
     segX(-g - T, g + T, s * (hd + CL + T / 2)); segZ(-g - T, g + T, s * (hw + CL + T / 2));
   }
+  SHELL.walls = solids.slice(shellStart); SHELL.solids = solids.slice();
+  // ── 以下是「地下室」專屬的擺設
+  scene.add(MAPS.basement.g); curParent = MAPS.basement.g; curSolids = MAPS.basement.solids;
   // 柱子
   for (const x of [-4.6, 4.6]) for (const z of [-8.5, 0, 8.5]) {
     addBox(.85, H, .85, x, H / 2, z, mWall);
@@ -551,7 +565,7 @@ function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
   // 天花板管線
   for (const [x, y, rr] of [[-hw + .45, H - .4, .11], [-hw + .8, H - .32, .06], [hw - .5, H - .45, .13], [2.2, H - .2, .05]]) {
     const p = new THREE.Mesh(new THREE.CylinderGeometry(rr, rr, D, 8), mRust);
-    p.rotation.x = Math.PI / 2; p.position.set(x, y, 0); p.castShadow = true; p.receiveShadow = true; scene.add(p);
+    p.rotation.x = Math.PI / 2; p.position.set(x, y, 0); p.castShadow = true; p.receiveShadow = true; curParent.add(p);
   }
   const duct = addBox(.7, .4, D, -2.4, H - .25, 0, mMetalDark, 2); duct.castShadow = false;
   // 木箱與鐵桶
@@ -560,9 +574,10 @@ function addBox(w, h, d, x, y, z, mat, tile = H, vOff = 0, shadow = true) {
   crate(8.4, 10.8, 1.2, .1); crate(8.2, 9.3, .8, .5); crate(-9, 5.5, 1, -.15); crate(6.5, -3.4, .9, .4);
   const barrel = (x, z) => {
     const m = new THREE.Mesh(new THREE.CylinderGeometry(.33, .33, 1, 12), mRust); m.position.set(x, .5, z);
-    m.castShadow = m.receiveShadow = true; scene.add(m); solids.push(m); obstacles.push({ x, z, r: .42 });
+    m.castShadow = m.receiveShadow = true; curParent.add(m); curSolids.push(m); obstacles.push({ x, z, r: .42 });
   };
   barrel(8.2, -12.4); barrel(9, -11.7); barrel(-9.3, 12.6); barrel(-6.8, 1.2);
+  MAPS.basement.obstacles = obstacles.slice(); solids.push(...MAPS.basement.solids); curParent = scene; curSolids = solids;
 }
 
 /* ───────────────────────── 燈光 ───────────────────────── */
@@ -570,14 +585,22 @@ const hemi = new THREE.HemisphereLight(0x27313a, 0x050403, 0.25); scene.add(hemi
 
 // 掛燈：穩定的昏暗光源（不閃爍），只保留極慢的晃動；主要照明交給槍上的手電筒
 const lamps = [];
-function addLamp(x, z, color, intensity, shadow, cord) {
-  const pivot = new THREE.Group(); pivot.position.set(x, H, z); scene.add(pivot);
+function addLamp(x, z, color, intensity, shadow, cord, lantern) {
+  const pivot = new THREE.Group(); pivot.position.set(x, H, z); curParent.add(pivot);
   const wire = new THREE.Mesh(new THREE.CylinderGeometry(.008, .008, cord, 4), mMetalDark); wire.position.y = -cord / 2; pivot.add(wire);
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(.24, .16, 10, 1, true),
-    new THREE.MeshStandardMaterial({ color: 0x1d3a2c, roughness: .45, metalness: .5, side: THREE.DoubleSide }));
-  shade.position.y = -cord - .05; shade.castShadow = shadow; pivot.add(shade);
-  const bulb = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3) }));
-  bulb.position.y = -cord - .14; pivot.add(bulb);
+  let bulb;
+  if (lantern) { // 白紙燈籠（寫著「奠」），燈光在燈籠中心；燈籠本身不擋光
+    bulb = new THREE.Mesh(new THREE.SphereGeometry(.24, 16, 12), new THREE.MeshBasicMaterial({ map: lantern, color: new THREE.Color(1.5, 1.2, .9) }));
+    bulb.scale.y = .82; bulb.position.y = -cord - .2; pivot.add(bulb);
+    for (const dy of [.2, -.2]) { const c = new THREE.Mesh(new THREE.CylinderGeometry(.11, .11, .05, 12), mLacq); c.position.y = bulb.position.y + dy; pivot.add(c); }
+    const ts = new THREE.Mesh(new THREE.CylinderGeometry(.015, .03, .3, 6), new THREE.MeshStandardMaterial({ color: 0x8a1410, roughness: .9 })); ts.position.y = bulb.position.y - .38; pivot.add(ts);
+  } else {
+    const shade = new THREE.Mesh(new THREE.ConeGeometry(.24, .16, 10, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0x1d3a2c, roughness: .45, metalness: .5, side: THREE.DoubleSide }));
+    shade.position.y = -cord - .05; shade.castShadow = shadow; pivot.add(shade);
+    bulb = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3) }));
+    bulb.position.y = -cord - .14; pivot.add(bulb);
+  }
   // 會投影的那盞用往下照的聚光燈：燈罩本來就朝下，而且點光源的陰影每格要多畫 6 次場景，聚光燈只要 1 次
   const light = shadow ? new THREE.SpotLight(color, intensity, 17, 1.25, .55, 2) : new THREE.PointLight(color, intensity, 17, 2); light.position.copy(bulb.position);
   if (shadow) {
@@ -589,15 +612,130 @@ function addLamp(x, z, color, intensity, shadow, cord) {
   if (shadow) { const fill = new THREE.PointLight(color, intensity * .55, 14, 2); fill.position.copy(bulb.position); pivot.add(fill); light.userData.fill = fill; }   // 不投影的補光：照亮天花板與牆面上半部（陰影只由聚光燈負責）
   lamps.push({ pivot, light, bulb, base: intensity, bcol: bulb.material.color.clone(), ph: rand(6.28), w1: rand(.5, .7), w2: rand(.35, .5), amp: rand(.02, .035) });
 }
+curParent = MAPS.basement.g;
 addLamp(0, 0, 0xffbe73, 11, true, .95);
 addLamp(0, -9.5, 0xffb875, 5, false, .8);
 addLamp(0, 9.5, 0xffb060, 5, false, 1.05);
+MAPS.basement.lamps = lamps.slice(); curParent = scene;
 
-function setDark(d) { hemi.intensity = d ? .1 : .25; for (const l of lamps) { l.light.intensity = d ? 0 : l.base; if (l.light.userData.fill) l.light.userData.fill.intensity = d ? 0 : l.base * .55; l.bulb.material.color.copy(l.bcol).multiplyScalar(d ? .02 : 1); } }
+function setDark(d) { hemi.intensity = d ? .1 : .25; for (const gl of MAPS[curMap].glow || []) gl.m.color.copy(gl.c).multiplyScalar(d ? .03 : 1); for (const l of lamps) { l.light.intensity = d ? 0 : l.base; if (l.light.userData.fill) l.light.userData.fill.intensity = d ? 0 : l.base * .55; l.bulb.material.color.copy(l.bcol).multiplyScalar(d ? .02 : 1); } }
+// 文字貼圖（匾額、對聯、燈籠）
+function textTex(w, h, bg, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; const g = c.getContext('2d'); g.fillStyle = bg; g.fillRect(0, 0, w, h); draw(g); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; }
+const CJK = '"Noto Serif TC","Noto Serif CJK TC","PMingLiU","Songti TC",serif';
+function vText(g, txt, x, y0, step, size, col) { g.fillStyle = col; g.font = `bold ${size}px ${CJK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; [...txt].forEach((ch, i) => g.fillText(ch, x, y0 + i * step)); }
+// 義莊：停放待運回鄉棺木的祠堂。外殼（牆、門、走廊）與地下室共用，只換材質與擺設
+function buildYizhuang() {
+  const M = MAPS.yizhuang; M.built = true; scene.add(M.g); curParent = M.g; curSolids = M.solids; const ob = M.obstacles, glow = M.glow = [];
+  const tTile = makeConcrete(TS, 71, 'tile');
+  M.floorMat = concreteMat(tTile, { color: 0xa8a49c, normalScale: new THREE.Vector2(1.1, 1.1) });
+  M.wallMat = concreteMat(tWall, { color: 0xc2ab8c, normalScale: new THREE.Vector2(.8, .8) });
+  M.ceilMat = concreteMat(tCeil, { color: 0x4a3a2c });
+  const mRed = new THREE.MeshStandardMaterial({ color: 0x5c100b, roughness: .42, normalMap: tCeil.normalMap, normalScale: new THREE.Vector2(.25, .25) });
+  const mStone = concreteMat(tCeil, { color: 0x8a8780 });
+  const mDarkWood = new THREE.MeshStandardMaterial({ map: mWood.map, color: 0x6a4a38, roughness: .8, normalMap: tCeil.normalMap });
+  const hw = W / 2, hd = D / 2, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3(1, 1, 1);
+  const inst = (geo, mat, list, shadow = true) => { const m = new THREE.InstancedMesh(geo, mat, list.length); list.forEach((t, i) => m.setMatrixAt(i, t)); m.castShadow = shadow; m.receiveShadow = true; m.computeBoundingSphere(); curParent.add(m); curSolids.push(m); return m; };
+  const mat = (x, y, z, ry = 0, rz = 0, s = 1) => new THREE.Matrix4().compose(v.set(x, y, z), q.setFromEuler(new THREE.Euler(0, ry, rz)), sc.set(s, s, s));
+  // 紅漆圓柱＋石柱礎（擋視線）
+  const cols = []; for (const x of [-3.2, 3.2]) for (const z of [-10.2, -3.4, 3.4, 10.2]) { cols.push([x, z]); ob.push({ x, z, r: .34, tall: true }); }
+  inst(new THREE.CylinderGeometry(.2, .22, H, 16).translate(0, H / 2, 0), mRed, cols.map(([x, z]) => mat(x, 0, z)));
+  inst(new THREE.CylinderGeometry(.3, .34, .26, 12).translate(0, .13, 0), mStone, cols.map(([x, z]) => mat(x, 0, z)));
+  // 屋樑
+  const beams = []; for (let z = -13.5; z <= 13.6; z += 3) beams.push(mat(0, H - .14, z));
+  inst(new THREE.BoxGeometry(W, .28, .3), mDarkWood, beams, false);
+  // 牆裙（暗紅木板）
+  const mPanel = mRed.clone(); mPanel.color.set(0x34100a); mPanel.roughness = .6;
+  for (const s of [-1, 1]) { addBox(W, .9, .05, 0, .45, s * (hd - .025), mPanel, 2, 0, false); addBox(.05, .9, D, s * (hw - .025), .45, 0, mPanel, 2, 0, false); }
+  // 棺木：頭端較高較寬、棺蓋拱起；放在兩張長凳上
+  const coffinGeo = (hgt, arch, base = 0) => { const g = new THREE.BoxGeometry(2.1, hgt, .72, 10, 1, 6), p = g.attributes.position;
+    for (let i = 0; i < p.count; i++) { const x = p.getX(i), t = (x + 1.05) / 2.1, s = .8 + .2 * t; let y = p.getY(i) + hgt / 2 + base, z = p.getZ(i) * s; y *= s; if (arch && p.getY(i) > 0) y += arch * s * (1 - (2 * p.getZ(i) / .72) ** 2); p.setXYZ(i, x, y, z); }
+    g.computeVertexNormals(); return g; };
+  const bodies = [], lids = [], benches = [], fronts = [];
+  const coffin = (x, z, ry, opts = {}) => {
+    const y0 = opts.floor ? 0 : .4, c = Math.cos(ry), sn = Math.sin(ry), at = (lx, lz) => [x + lx * c + lz * sn, z - lx * sn + lz * c];
+    bodies.push(mat(x, y0, z, ry));
+    const lo = opts.open ? [0, .34, .5] : [0, 0, 0]; const [lx, lz] = at(lo[0], lo[1]); lids.push(mat(lx, y0 + (opts.open ? .02 : 0), lz, ry + (opts.open ? .12 : 0), opts.open ? .06 : 0));
+    if (!opts.floor) for (const bx of [-.62, .62]) { const [px, pz] = at(bx, 0); benches.push(mat(px, 0, pz, ry)); }
+    const [fx, fz] = at(1.051, 0); fronts.push(mat(fx, y0 + .3, fz, ry + Math.PI / 2));
+    for (const bx of [-.55, .55]) { const [px, pz] = at(bx, 0); ob.push({ x: px, z: pz, r: .5 }); }
+  };
+  for (const s of [-1, 1]) for (const z of [-12, -8.5, -5, 5, 8.5, 12]) {
+    if (s === 1 && z === -5) { coffin(6.6, -5.2, Math.PI + .25, { floor: true, open: true }); continue; }   // 掀開的那口
+    if (s === -1 && z === 12) continue;
+    coffin(s * 6.6, z + (s * z % 3 ? .15 : -.1), s === 1 ? Math.PI : 0);
+  }
+  coffin(-8.4, 12.2, Math.PI / 2 + .05);   // 靠牆斜放
+  inst(coffinGeo(.56, 0), mLacq, bodies); inst(coffinGeo(.1, .07, .56), mLacq, lids);
+  inst(new THREE.BoxGeometry(.22, .4, .86).translate(0, .2, 0), mDarkWood, benches);
+  const fuku = textTex(128, 128, '#140806', g => { g.strokeStyle = '#b08a3a'; g.lineWidth = 5; g.beginPath(); g.arc(64, 64, 52, 0, 7); g.stroke(); g.fillStyle = '#c9a24a'; g.font = `bold 72px ${CJK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('壽', 64, 68); });
+  const fm = new THREE.InstancedMesh(new THREE.PlaneGeometry(.42, .42), new THREE.MeshStandardMaterial({ map: fuku, roughness: .5, metalness: .3 }), fronts.length); fronts.forEach((t, i) => fm.setMatrixAt(i, t)); curParent.add(fm);
+  // 神桌、牌位、香爐、蠟燭（北牆門左側）
+  const ax = -6.4, az = -hd + .5;
+  addBox(2.4, .08, .9, ax, .92, az, mDarkWood, 1); addBox(2.3, .86, .06, ax, .45, az + .42, mRed, 1, 0, false);
+  for (const dx of [-1.1, 1.1]) addBox(.08, .88, .8, ax + dx, .44, az, mDarkWood, 1);
+  ob.push({ x: ax - .7, z: az, r: .55 }, { x: ax + .7, z: az, r: .55 });
+  addBox(1.7, .35, .35, ax, 1.13, az - .22, mDarkWood, 1);                                  // 牌位台階
+  const tabT = textTex(64, 192, '#1a0c08', g => { g.strokeStyle = '#a8843a'; g.lineWidth = 3; g.strokeRect(5, 5, 54, 182); vText(g, '故顯考之靈位', 32, 26, 28, 22, '#cfa850'); });
+  const tabM = new THREE.MeshStandardMaterial({ map: tabT, roughness: .5 });
+  for (let i = 0; i < 7; i++) { const t = new THREE.Mesh(new THREE.BoxGeometry(.13, .38 + (i % 3) * .04, .04), [mLacq, mLacq, mLacq, mLacq, tabM, mLacq]); t.position.set(ax - .63 + i * .21, 1.5 + (i % 3) * .02, az - .22 + (i % 2) * .04); curParent.add(t); }
+  const brass = new THREE.MeshStandardMaterial({ color: 0x6e5428, roughness: .35, metalness: .9 });
+  const burner = new THREE.Mesh(new THREE.CylinderGeometry(.14, .11, .16, 16), brass); burner.position.set(ax, 1.04, az + .15); burner.castShadow = true; curParent.add(burner);
+  const emb = new THREE.MeshBasicMaterial({ color: new THREE.Color(3, .7, .2) }); glow.push({ m: emb, c: emb.color.clone() });
+  for (let i = 0; i < 3; i++) { const st = new THREE.Mesh(new THREE.CylinderGeometry(.004, .004, .3, 4), new THREE.MeshStandardMaterial({ color: 0x5a2a14 })); st.position.set(ax - .04 + i * .04, 1.27, az + .15); st.rotation.z = (i - 1) * .12; curParent.add(st); const tip = new THREE.Mesh(new THREE.SphereGeometry(.008, 6, 4), emb); tip.position.set(ax - .04 + i * .04 - (i - 1) * .018, 1.42, az + .15); curParent.add(tip); }
+  const flame = new THREE.MeshBasicMaterial({ color: new THREE.Color(4, 1.6, .45) }); glow.push({ m: flame, c: flame.color.clone() });
+  for (const dx of [-.95, .95]) {
+    const cd = new THREE.Mesh(new THREE.CylinderGeometry(.04, .04, .3, 10), new THREE.MeshStandardMaterial({ color: 0x9a1810, roughness: .6 })); cd.position.set(ax + dx, 1.11, az + .1); cd.castShadow = true; curParent.add(cd);
+    const f = new THREE.Mesh(new THREE.SphereGeometry(.022, 8, 6), flame); f.scale.y = 2.2; f.position.set(ax + dx, 1.31, az + .1); curParent.add(f);
+  }
+  // 門楣匾額「義莊」與兩側對聯
+  const plq = textTex(512, 160, '#1a0b06', g => { g.strokeStyle = '#a8843a'; g.lineWidth = 10; g.strokeRect(10, 10, 492, 140); g.fillStyle = '#d6ae4e'; g.font = `bold 108px ${CJK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('義　莊', 256, 86); });
+  const pm = new THREE.Mesh(new THREE.BoxGeometry(2.2, .66, .08), [mLacq, mLacq, mLacq, mLacq, new THREE.MeshStandardMaterial({ map: plq, roughness: .45, metalness: .2 }), mLacq]);
+  pm.position.set(0, 2.95, -hd + .06); curParent.add(pm);
+  for (const [dx, txt] of [[1.75, '魂歸故里'], [-1.75, '早登仙界']]) {
+    const t = textTex(96, 384, '#8e1a12', g => vText(g, txt, 48, 50, 94, 76, '#1a0a06'));
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(.36, 1.6), new THREE.MeshStandardMaterial({ map: t, roughness: .9 })); p.position.set(dx, 1.75, -hd + .03); curParent.add(p);
+  }
+  // 牆上的符咒、地上的冥紙
+  const fuM = new THREE.MeshStandardMaterial({ map: fuTex, roughness: .95, side: THREE.DoubleSide });
+  const fus = []; for (let i = 0; i < 26; i++) { const side = i % 4, t = rand(-.9, .9), y = rand(1.1, 2.3), tilt = rand(-.15, .15);
+    if (side < 2) { const z = side ? hd - .03 : -hd + .03; if (Math.abs(t * hw) < 2.4) continue; fus.push(mat(t * hw, y, z, side ? Math.PI : 0, tilt)); }
+    else { const x = side === 2 ? -hw + .03 : hw - .03; if (Math.abs(t * hd) < 2) continue; fus.push(mat(x, y, t * hd, side === 2 ? Math.PI / 2 : -Math.PI / 2, tilt)); } }
+  for (const [cx, cz] of cols) for (let k = 0; k < 2; k++) { const a = rand(6.28); fus.push(mat(cx + Math.sin(a) * .215, rand(1.2, 1.9), cz + Math.cos(a) * .215, a, rand(-.1, .1))); }
+  const fum = new THREE.InstancedMesh(new THREE.PlaneGeometry(.12, .36), fuM, fus.length); fus.forEach((t, i) => fum.setMatrixAt(i, t)); curParent.add(fum);
+  const joss = textTex(64, 64, '#c9a73c', g => { g.fillStyle = '#b8b0a0'; g.fillRect(20, 20, 24, 24); g.strokeStyle = '#8a2a18'; g.lineWidth = 3; g.strokeRect(6, 6, 52, 52); });
+  const jm = new THREE.MeshStandardMaterial({ map: joss, roughness: .95, polygonOffset: true, polygonOffsetFactor: -2 });
+  const jl = []; for (let i = 0; i < 160; i++) { const x = rand(-hw + .3, hw - .3), z = rand(-hd + .3, hd - .3); jl.push(new THREE.Matrix4().compose(v.set(x, .004 + i * 1e-5, z), q.setFromEuler(new THREE.Euler(-Math.PI / 2, 0, rand(6.28))), sc.set(1, 1, 1))); }
+  const jmesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(.11, .11), jm, jl.length); jl.forEach((t, i) => jmesh.setMatrixAt(i, t)); jmesh.receiveShadow = true; curParent.add(jmesh);
+  // 燈：中央一盞會投影的白燈籠＋兩盞不投影的；兩側牆邊掛幾盞只發光的小燈籠
+  const lt = textTex(256, 128, '#f1e2c2', g => { g.strokeStyle = 'rgba(120,80,40,.35)'; g.lineWidth = 2; for (let x = 0; x < 256; x += 16) { g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 128); g.stroke(); } g.fillStyle = '#140a06'; g.font = `bold 58px ${CJK}`; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('奠', 64, 66); g.fillText('奠', 192, 66); });
+  const L0 = lamps.length;
+  addLamp(0, 0, 0xffb27a, 11, true, .75, lt);
+  addLamp(0, -9.5, 0xffa874, 5, false, .7, lt);
+  addLamp(0, 9.5, 0xffa874, 5, false, .85, lt);
+  M.lamps = lamps.splice(L0);
+  const red = new THREE.MeshBasicMaterial({ color: new THREE.Color(1.6, .22, .1) }); glow.push({ m: red, c: red.color.clone() });
+  const lg = new THREE.SphereGeometry(.21, 12, 8);
+  for (const [x, z] of [[-hw + .45, -6.8], [-hw + .45, 6.8], [hw - .45, -6.8], [hw - .45, 6.8]]) { const l = new THREE.Mesh(lg, red); l.scale.y = .8; l.position.set(x, 2.55, z); curParent.add(l); const w = new THREE.Mesh(new THREE.CylinderGeometry(.006, .006, .7, 4), mMetalDark); w.position.set(x, 3.0, z); curParent.add(w); }
+  M.g.visible = false; curParent = scene; curSolids = solids;
+}
+function setMap(id) {
+  if (!MAPS[id]) id = 'basement';
+  if (id === 'yizhuang' && !MAPS.yizhuang.built) buildYizhuang();
+  curMap = id; const M = MAPS[id];
+  for (const k in MAPS) MAPS[k].g.visible = k === id;
+  obstacles.length = 0; obstacles.push(...M.obstacles);
+  solids.length = 0; solids.push(...SHELL.solids, ...M.solids);
+  lamps.length = 0; lamps.push(...M.lamps);
+  SHELL.floor.material = M.floorMat || mFloor; SHELL.ceil.material = M.ceilMat || mCeil; for (const w of SHELL.walls) w.material = M.wallMat || mWall;
+  hemi.color.set(id === 'yizhuang' ? 0x33302a : 0x27313a);
+  // 地下室的門上紅燈只屬於地下室
+  for (const b of doorLights) b.visible = id === 'basement';
+}
+const doorLights = [];
 // 門上的紅色指示燈（恆亮）：只發光、不照明，省下兩盞燈的逐像素計算
 for (const s of [-1, 1]) {
   const b = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, .14, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, .2, .08) }));
-  b.position.set(0, 2.78, s * (D / 2 - .12)); scene.add(b);
+  b.position.set(0, 2.78, s * (D / 2 - .12)); scene.add(b); doorLights.push(b);
 }
 
 // 槍燈（手電筒）：主要光源，會投射怪物的影子
@@ -1981,9 +2119,12 @@ const MODES = {
 let gameMode = MODES[LS.get('b2mode')] ? LS.get('b2mode') : 'survival', timeLeft = 0, lastSec = -1, comboN = 0, comboT = 0, bossE = null, bossPending = false, lastBoss = -1;
 let sensMul = clamp(parseFloat(LS.get('b2sens')) || 1, .4, 2.2);
 const best = m => +LS.get('b2best_' + m) || 0;
+let mapSel = MAPS[LS.get('b2map')] ? LS.get('b2map') : 'basement';
 function refreshModes() {
   $('modes').innerHTML = ''; 
   for (const k in MODES) { const b = document.createElement('button'); b.className = 'chip' + (k === gameMode ? ' on' : ''); b.textContent = MODES[k].n; b.onclick = () => { gameMode = k; LS.set('b2mode', k); refreshModes(); }; $('modes').appendChild(b); }
+  $('maps').innerHTML = '';
+  for (const k in MAPS) { const b = document.createElement('button'); b.className = 'chip' + (k === mapSel ? ' on' : ''); b.textContent = '地圖 · ' + MAPS[k].n; b.onclick = () => { mapSel = k; LS.set('b2map', k); setMap(k); refreshModes(); }; $('maps').appendChild(b); }
   $('modeDesc').textContent = MODES[gameMode].d + (best(gameMode) ? `　·　最佳 ${best(gameMode)}` : '');
 }
 refreshModes();
@@ -1994,6 +2135,29 @@ $('volA').oninput = e => { VOL.amb = +e.target.value; LS.set('b2va', VOL.amb); a
 $('calm').onchange = e => { calm = e.target.checked; LS.set('b2calm', calm ? '1' : '0'); };
 $('fpsOn').checked = LS.get('b2fps') === '1'; document.body.classList.toggle('showfps', $('fpsOn').checked);
 $('fpsOn').onchange = e => { LS.set('b2fps', e.target.checked ? '1' : '0'); document.body.classList.toggle('showfps', e.target.checked); };
+// 環境光遮蔽（GTAO）：只在電腦上開放。角落、柱腳、棺木底下、怪物腳邊會自然變暗，物體不再像浮在地上
+// 半解析度計算；粒子、半透明特效不寫入法線，避免槍口火光在牆上留下黑影
+let gtao = null, aoBusy = false;
+async function setAO(on) {
+  if (on && !gtao && !aoBusy) {
+    aoBusy = true;
+    try {
+      const { GTAOPass } = await import('three/addons/postprocessing/GTAOPass.js');
+      gtao = new GTAOPass(scene, camera, vw, vh, undefined, { radius: .45, distanceExponent: 1.4, thickness: 1.2, scale: 1, samples: 12 }, { radius: 6, rings: 2, samples: 12 });
+      gtao.blendIntensity = .85;
+      const base = GTAOPass.prototype.setSize; gtao.setSize = function (w, h) { base.call(this, Math.max(1, w >> 1), Math.max(1, h >> 1)); };
+      gtao.overrideVisibility = function () {
+        const c = this._visibilityCache;
+        this.scene.traverse(o => { c.set(o, o.visible); const m = o.material; if (o.isPoints || o.isLine || o.isSprite || (m && !Array.isArray(m) && (m.transparent || m.depthWrite === false || m.blending === THREE.AdditiveBlending))) o.visible = false; });
+      };
+      composer.insertPass(gtao, 1); composer.setSize(vw, vh);
+    } catch (e) { console.warn('GTAO', e); }
+    aoBusy = false;
+  }
+  if (gtao) gtao.enabled = on && $('aoOn').checked;
+}
+if (IS_TOUCH) $('aoLbl').style.display = 'none';
+else { $('aoOn').checked = LS.get('b2ao') !== '0'; $('aoOn').onchange = e => { LS.set('b2ao', e.target.checked ? '1' : '0'); setAO(e.target.checked); }; }
 
 // 強化（每波結束三選一）
 const perk = {};
@@ -2097,6 +2261,7 @@ async function begin(mode) {
   } else tl.requestPointerLock?.();
   document.body.classList.toggle('gyro', useGyro); document.body.classList.toggle('remote', remote.on);
   for (const id of ['menu', 'over', 'pair', 'perks', 'pauseScr']) $(id).classList.add('hide'); mountSettings($('menu')); closePicker(); $('hud').classList.add('on');
+  if (curMap !== mapSel) setMap(mapSel);
   state = 'play'; resetGame();
   if (mode === true && IS_TOUCH) {
     if (!useGyro) showTip('無法取得陀螺儀權限，已改用觸控瞄準', 4000);
@@ -2431,12 +2596,13 @@ function frame() {
   if (fpsAcc > 2) {
     const fps = fpsN / fpsAcc; fpsAcc = fpsN = 0;
     if (fps < 42 && pixelRatio > .7) { pixelRatio = Math.max(.7, pixelRatio - .2); needResize = true; if (pixelRatio <= 1 && torch.castShadow) { torch.castShadow = false; } }
+    else if (fps < 34 && gtao && gtao.enabled) { gtao.enabled = false; showTip('畫面吃力，已暫時關閉環境光遮蔽', 2500); }   // 電腦太慢就先關 AO
     else if (fps < 30 && lamps[0].light.castShadow) lamps[0].light.castShadow = false;      // 仍然吃力就關掉掛燈陰影
     else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); needResize = true; }
   }
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (document.hidden) pauseGame(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
-qBase.identity(); setWeapon(0); loadExtModels(); document.body.classList.remove('loading');      // 程式準備好了，按鈕才能按
+qBase.identity(); setWeapon(0); if (mapSel !== 'basement') setMap(mapSel); if (!IS_TOUCH && $('aoOn').checked) setAO(true); loadExtModels(); document.body.classList.remove('loading');      // 程式準備好了，按鈕才能按
 // 可安裝成 App：註冊離線快取（只在 HTTPS 或本機開發時）
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => { });
 // 在選單閒置時逐一預先建立所有武器模型，最後把武器、特效、掉落箱一次編譯好，戰鬥中第一次用到就不會卡
@@ -2451,7 +2617,7 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.
 })();
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, renderer, pause: () => pauseGame(), resume: () => resumeGame(), picker: () => openPicker(), gt: () => gameTime, dbgFx: () => ({ trauma, stopT, prebuilt, built: WEAPONS.filter(w => w.g).length }), hp: e => e.hp, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, renderer, pause: () => pauseGame(), resume: () => resumeGame(), picker: () => openPicker(), gt: () => gameTime, dbgFx: () => ({ trauma, stopT, prebuilt, built: WEAPONS.filter(w => w.g).length }), hp: e => e.hp, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, setMap(k) { mapSel = k; setMap(k); refreshModes(); }, get map() { return curMap; }, ao: on => setAO(on), get gtao() { return gtao; }, obst: () => obstacles, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
