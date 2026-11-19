@@ -2097,7 +2097,7 @@ $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
-const clock = new THREE.Clock(); let needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, deathTilt = 0, lastUI = -1;
+const clock = new THREE.Clock(); let gameTime = 0, needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
   const w = cur, P = w.parts, play = state === 'play';
@@ -2252,7 +2252,7 @@ function updatePlayer(dt) {
 function frame() {
   requestAnimationFrame(frame);
   if (needResize) { needResize = false; resize(); }      // 改畫布大小會清空畫面，所以放在這一格開始繪製之前
-  const dt = Math.min(.05, clock.getDelta()) * timeScale, t = clock.elapsedTime;
+  const dt = Math.min(.05, clock.getDelta()) * timeScale, t = clock.elapsedTime; gameTime += dt;
   for (const l of lamps) { l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7; }
 
   if (state === 'play') {
@@ -2305,7 +2305,7 @@ document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) 
 qBase.identity(); setWeapon(0); loadExtModels();
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, gt: () => gameTime, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
