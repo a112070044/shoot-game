@@ -49,4 +49,4 @@
 
 ## 開發用的 Claude 技能
 
-`.claude/skills/` 內有 17 個遊戲開發技能（射擊手感、效能、音效、敵人 AI、關卡、Three.js 光影與特效、快速原型與設計文件流程），以這個專案開啟 Claude Code 時會自動載入。來源與授權見 `.claude/skills/README.md`。
+`.claude/skills/` 內有 15 個遊戲開發技能（射擊手感、效能、音效、敵人 AI、關卡、Three.js 光影與特效、快速原型與設計文件流程），以這個專案開啟 Claude Code 時會自動載入。來源與授權見 `.claude/skills/README.md`。
