@@ -1,0 +1,16 @@
+{
+  "name": "地下室 B2",
+  "short_name": "地下室",
+  "description": "第一人稱殭屍射擊：清朝殭屍、地下室、手機陀螺儀或手機遙控器。",
+  "lang": "zh-Hant",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}

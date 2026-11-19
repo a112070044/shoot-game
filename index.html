@@ -6,6 +6,11 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#000000">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="地下室">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<link rel="icon" href="icons/icon-192.png">
 <title>地下室 B2</title>
 <style>
   html,body{margin:0;height:100%;background:#000;overflow:hidden;overscroll-behavior:none;
@@ -2432,6 +2437,8 @@ function frame() {
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (document.hidden) pauseGame(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
 qBase.identity(); setWeapon(0); loadExtModels(); document.body.classList.remove('loading');      // 程式準備好了，按鈕才能按
+// 可安裝成 App：註冊離線快取（只在 HTTPS 或本機開發時）
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => { });
 // 在選單閒置時逐一預先建立所有武器模型，最後把武器、特效、掉落箱一次編譯好，戰鬥中第一次用到就不會卡
 (function prebuild(i = 0) {
   if (i < WEAPONS.length) { if (state === 'play' || state === 'perk') return setTimeout(() => prebuild(i), 1500); ensureWeapon(WEAPONS[i]); if (WEAPONS[i] !== cur) WEAPONS[i].g.visible = false; return setTimeout(() => prebuild(i + 1), 60); }
