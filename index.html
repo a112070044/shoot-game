@@ -16,6 +16,10 @@
   #hud{position:fixed;inset:0;pointer-events:none;z-index:3;display:none}
   #hud.on{display:block}
   #aim{position:absolute;inset:0}
+  #wpick{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;grid-template-columns:repeat(2,minmax(130px,auto));gap:6px;pointer-events:auto;max-height:calc(100% - 24px);overflow-y:auto}
+  #wpick.on{display:grid}
+  #wpick div{padding:8px 12px;border:1px solid rgba(216,210,196,.45);border-radius:6px;background:rgba(12,10,8,.82);font-size:14px;letter-spacing:.1em;display:flex;justify-content:space-between;gap:12px}
+  #wpick div.cur{border-color:#e8c040;color:#ffd860}#wpick small{opacity:.6;font-variant-numeric:tabular-nums}
   #fps{position:absolute;left:calc(14px + env(safe-area-inset-left));top:calc(42px + env(safe-area-inset-top));font:11px/1.4 ui-monospace,Menlo,monospace;color:#9fe39a;text-shadow:0 0 3px #000;display:none;white-space:pre}
   body.showfps #fps{display:block}
   #cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:.8}
@@ -42,6 +46,7 @@
   #ammo small{font-size:13px;opacity:.6;font-weight:400}
   #ammo.low{color:#ff5a4a}
   body.desk #ammo{right:28px}
+  body:not(.desk) #ammo{right:calc(16px + env(safe-area-inset-right));top:calc(60px + env(safe-area-inset-top));bottom:auto;font-size:24px}
   #banner{position:absolute;left:0;right:0;top:26%;text-align:center;font-size:26px;letter-spacing:.5em;
     opacity:0;transition:opacity .5s;text-shadow:0 0 12px #000}
   #banner.on{opacity:.92}
@@ -52,7 +57,8 @@
   .btn.act{background:rgba(185,58,44,.5)}
   #fire{right:calc(22px + env(safe-area-inset-right));bottom:calc(26px + env(safe-area-inset-bottom));width:88px;height:88px;font-size:14px}
   #reload{right:calc(122px + env(safe-area-inset-right));bottom:calc(74px + env(safe-area-inset-bottom));width:54px;height:54px}
-  #center{right:calc(14px + env(safe-area-inset-right));top:calc(12px + env(safe-area-inset-top));width:46px;height:46px;font-size:11px;display:none}
+  #pauseBtn{right:calc(14px + env(safe-area-inset-right));top:calc(12px + env(safe-area-inset-top));width:42px;height:42px;font-size:13px;letter-spacing:0}
+  #center{right:calc(66px + env(safe-area-inset-right));top:calc(12px + env(safe-area-inset-top));width:46px;height:46px;font-size:11px;display:none}
   body.gyro #center{display:flex}
   #ads{right:calc(40px + env(safe-area-inset-right));bottom:calc(126px + env(safe-area-inset-bottom));width:52px;height:52px}
   #swap{right:calc(112px + env(safe-area-inset-right));bottom:calc(140px + env(safe-area-inset-bottom));width:48px;height:48px}
@@ -86,6 +92,9 @@
   #cPerks{display:flex;flex-direction:column;gap:10px;width:86%}
   #cPerks .pk{width:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:14px}
   #starts{display:flex;flex-direction:column;align-items:center}
+  #loadMsg{display:none;font-size:13px;letter-spacing:.3em;opacity:.7;margin:-6px 0 10px;animation:blink 1.2s ease-in-out infinite alternate}
+  @keyframes blink{from{opacity:.25}to{opacity:.8}}
+  body.loading #loadMsg{display:block} body.loading #menu button{opacity:.3;pointer-events:none}
   .screen{overflow-y:auto;justify-content:flex-start}
   .screen>:first-child{margin-top:auto}.screen>:last-child{margin-bottom:auto}      /* 內容比螢幕高時從頂端開始排，往上捲得到 */
   @media (max-height:480px){
@@ -103,6 +112,7 @@
   #cJoin p{font-size:14px;line-height:1.9;opacity:.65;margin:14px 0 22px}
   #cMsg{margin-top:16px;font-size:13px;color:#ffb3a6;min-height:1.4em}
   #cPad{flex:1;display:none;flex-direction:column;min-height:0}
+  #cPause{flex:0 0 auto;padding:4px 10px;font-size:12px;font-weight:400}
   #cNet{font-size:10px;padding:2px 6px;border:1px solid rgba(216,210,196,.35);border-radius:3px;opacity:.7;letter-spacing:.05em}
   #cSens{display:flex;align-items:center;justify-content:center;gap:10px;padding:0 12px 10px;font-size:12px;letter-spacing:.15em}
   #cSens span{opacity:.6}#cSens .cb{flex:0 0 56px;padding:8px 0}#cSv{min-width:36px;text-align:center;font-size:16px;font-variant-numeric:tabular-nums}
@@ -140,7 +150,7 @@
   #err{position:fixed;left:0;right:0;bottom:0;z-index:99;font-size:11px;color:#f88;padding:6px;white-space:pre-wrap;pointer-events:none}
 </style>
 </head>
-<body>
+<body class="loading">
 <div id="touch"></div>
 <div id="hud">
   <div class="tl"><div class="lbl">生命</div><div id="hpbar"><div id="hpfill"></div></div></div>
@@ -159,11 +169,14 @@
   <div class="btn" id="ads">開鏡</div>
   <div class="btn" id="swap">換槍</div>
   <div class="btn" id="center">回正</div>
+  <div class="btn" id="pauseBtn">❚❚</div>
+  <div id="wpick"></div>
 </div>
 
 <div class="screen" id="menu">
   <h1>地下室</h1>
   <div class="sub">B2 · 燈快熄了</div>
+  <div id="loadMsg">載入中…</div>
   <div id="modes"></div>
   <div id="modeDesc"></div>
   <div id="starts">
@@ -175,6 +188,13 @@
   <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label></div>
   <div class="help" id="help"></div>
   <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
+</div>
+<div class="screen hide" id="pauseScr">
+  <h1 style="font-size:clamp(28px,6vw,48px)">暫停</h1>
+  <div class="sub" id="pauseInfo"></div>
+  <button id="bResume">繼續</button>
+  <button id="bQuit" class="alt">回主選單</button>
+  <div id="pauseSet"></div>
 </div>
 <div class="screen hide" id="perks">
   <div class="sub" style="margin-bottom:16px;opacity:.8">選擇一項強化</div>
@@ -243,7 +263,7 @@ window.B2 = {
       <p>直握手機，像拿電視遙控器一樣把頂端指向螢幕<br>指到哪裡準星就到哪裡，指向畫面邊緣會自動轉身</p>
       <button id="cGo">連線並啟用陀螺儀</button><div id="cMsg"></div></div>
     <div id="cPad">
-      <div id="cTop"><span id="cNet"></span><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
+      <div id="cTop"><span id="cNet"></span><b class="cb" data-k="pause" id="cPause">❚❚</b><span id="cW">手槍</span><span id="cA">12 / 12</span><div id="cHp"><i></i></div></div>
       <div id="cSens"><span>靈敏度</span><div class="cb" data-k="s-">－</div><b id="cSv">1.0</b><div class="cb" data-k="s+">＋</div></div>
       <div id="cSwipe"><button id="cStart">開始遊戲</button><div id="cPerks"></div><span>指向螢幕邊緣會自動轉身 · 在這裡滑動可快速轉身<br>準星偏掉時：把手機指向螢幕正中央再按「回正」</span></div>
       <div id="cRow"><div class="cb" data-k="ads">開鏡</div><div class="cb" data-k="reload">換彈</div><div class="cb" data-k="next">換槍</div><div class="cb" data-k="center">回正</div></div>
@@ -282,7 +302,7 @@ window.B2 = {
     else if (d.t === 'h') {
       if (d.s) $('#cSv').textContent = (+d.s).toFixed(1);
       $('#cW').textContent = d.w; $('#cA').textContent = (d.r ? '換彈中' : d.m === '' ? d.a : d.a + ' / ' + d.m); $('#cHp i').style.width = d.hp + '%';
-      const b = $('#cStart'); b.style.display = d.st === 'play' || d.st === 'perk' ? 'none' : ''; b.textContent = d.st === 'dead' ? '再來一次' : '開始遊戲';
+      const b = $('#cStart'); b.style.display = d.st === 'play' || d.st === 'perk' ? 'none' : ''; b.textContent = d.st === 'dead' ? '再來一次' : d.st === 'paused' ? '繼續' : '開始遊戲';
       const key = d.pk ? JSON.stringify(d.pk) : ''; if (key !== pkKey) {
         pkKey = key; const box = $('#cPerks'); box.innerHTML = '';
         (d.pk || []).forEach((p, i) => { const q = document.createElement('button'); q.className = 'pk'; q.innerHTML = '<b></b><span></span>'; q.firstChild.textContent = p[0]; q.lastChild.textContent = p[1]; q.onclick = () => send({ t: 'e', k: 'perk', i }); box.appendChild(q); });
@@ -329,7 +349,7 @@ window.B2 = {
   el.querySelectorAll('.cb').forEach(b => b.addEventListener('touchstart', x => {
     x.preventDefault(); const k = b.dataset.k;
     if (k === 'ads') { st.a ^= 1; b.classList.toggle('act', !!st.a); } else if (k === 'center') center();
-    else if (k === 's-' || k === 's+') send({ t: 'e', k: 'sens', d: k === 's+' ? .1 : -.1 }); else send({ t: 'e', k });
+    else if (k === 's-' || k === 's+') send({ t: 'e', k: 'sens', d: k === 's+' ? .1 : -.1 }); else send({ t: 'e', k });      // 包含暫停（pause）
   }, { passive: false }));
   $('#cStart').onclick = () => { center(); send({ t: 'e', k: 'start' }); };
 })();
@@ -854,7 +874,9 @@ function tStart(e) {
   for (const t of e.changedTouches) {
     const el = t.target.closest ? t.target.closest('.btn') : null; let type;
     if (el && el.id === 'reload') { reload(); continue; }
-    if (el && el.id === 'swap') { switchWeapon(1); continue; }
+    if (el && el.id === 'swap') { if (pickOpen) { closePicker(); continue; } clearTimeout(swapHold); swapHold = setTimeout(openPicker, 380); type = 'swap'; tmap.set(t.identifier, { type }); continue; }
+    if (el && el.id === 'pauseBtn') { pauseGame(); continue; }
+    if (pickOpen) closePicker();
     if (el && el.id === 'ads') { input.ads = !input.ads; el.classList.toggle('act', input.ads); continue; }
     if (el && el.id === 'center') { calibrate(yawOf(qSmooth)); showTip('視角已回正'); continue; }
     if (el && el.id === 'fire') { type = 'fire'; input.fire = true; el.classList.add('act'); }
@@ -881,10 +903,24 @@ function tEnd(e) {
     const s = tmap.get(t.identifier); if (!s) continue; tmap.delete(t.identifier);
     if (s.type === 'move') { input.mx = input.my = 0; stick.style.display = 'none'; }
     if (s.type === 'fire') { input.fire = false; $('fire').classList.remove('act'); }
+    if (s.type === 'swap' && swapHold) { clearTimeout(swapHold); swapHold = 0; switchWeapon(1); }      // 短按：輪流切換
   }
 }
 const tl = $('touch');
-for (const el of [tl, $('fire'), $('reload'), $('center'), $('swap'), $('ads')]) {
+// 長按「換槍」跳出武器清單（直接點選），短按維持輪流切換
+let swapHold = 0, pickOpen = false;
+function openPicker() {
+  swapHold = 0; if (state !== 'play') return; pickOpen = true; const box = $('wpick'); box.innerHTML = '';
+  for (const i of ownedIdx()) {
+    const w = WEAPONS[i], d = document.createElement('div'); d.className = w === cur ? 'cur' : ''; d.innerHTML = '<span></span><small></small>';
+    d.firstChild.textContent = w.name; d.lastChild.textContent = w.melee ? '∞' : w.drop ? w.ammo : w.ammo + '/' + w.mag;
+    const pickIt = ev => { ev.preventDefault(); ev.stopPropagation(); switchWeapon(0, i); closePicker(); };
+    d.addEventListener('touchstart', pickIt, { passive: false }); d.addEventListener('click', pickIt); box.appendChild(d);
+  }
+  box.classList.add('on'); navigator.vibrate?.(15);
+}
+function closePicker() { pickOpen = false; $('wpick').classList.remove('on'); }
+for (const el of [tl, $('fire'), $('reload'), $('center'), $('swap'), $('ads'), $('pauseBtn')]) {
   el.addEventListener('touchstart', tStart, { passive: false }); el.addEventListener('touchmove', tMove, { passive: false });
   el.addEventListener('touchend', tEnd); el.addEventListener('touchcancel', tEnd);
 }
@@ -2055,7 +2091,7 @@ async function begin(mode) {
     try { await document.documentElement.requestFullscreen?.({ navigationUI: 'hide' }); await screen.orientation?.lock?.('landscape'); } catch (e) { }
   } else tl.requestPointerLock?.();
   document.body.classList.toggle('gyro', useGyro); document.body.classList.toggle('remote', remote.on);
-  for (const id of ['menu', 'over', 'pair', 'perks']) $(id).classList.add('hide'); $('hud').classList.add('on');
+  for (const id of ['menu', 'over', 'pair', 'perks', 'pauseScr']) $(id).classList.add('hide'); mountSettings($('menu')); closePicker(); $('hud').classList.add('on');
   state = 'play'; resetGame();
   if (mode === true && IS_TOUCH) {
     if (!useGyro) showTip('無法取得陀螺儀權限，已改用觸控瞄準', 4000);
@@ -2071,7 +2107,30 @@ function gameOver(timeUp) {
 }
 $('bGyro').onclick = () => begin(true); $('bTouch').onclick = () => begin(false);
 $('bAgain').onclick = () => begin(lastMode === 'remote' && !remoteLive() ? false : lastMode);
-$('bMenu').onclick = () => { $('over').classList.add('hide'); $('menu').classList.remove('hide'); state = 'menu'; player.set(0, EYE, 5); deathTilt = 0; setDark(false); };
+function toMenu() {
+  for (const id of ['over', 'pauseScr', 'perks']) $(id).classList.add('hide'); $('hud').classList.remove('on'); $('menu').classList.remove('hide');
+  state = 'menu'; input.fire = input.ads = false; closePicker(); player.set(0, EYE, 5); deathTilt = 0; setDark(false); mountSettings($('menu'));
+  while (enemies.length) removeEnemy(enemies[0]); rayTargets.length = 0;
+  for (const P of projs) scene.remove(P.o); projs.length = 0; for (const k of crates) { k.life = 0; k.g.visible = false; }
+  document.exitPointerLock?.(); remoteStatus();
+}
+$('bMenu').onclick = toMenu;
+// 暫停：手機右上角按鈕、電腦 Esc 或 P、切到背景、遙控器上的暫停鈕；設定（靈敏度、音量）在暫停畫面也能調
+function mountSettings(parent) { const a = $('sensRow'), b = $('setRow'); if (parent.id === 'menu') { $('help').before(a, b); } else { $('pauseSet').append(a, b); } }
+function pauseGame() {
+  if (state !== 'play') return; state = 'paused'; input.fire = input.ads = false; input.mx = input.my = 0; tmap.clear(); stick.style.display = 'none'; closePicker();
+  $('fire').classList.remove('act'); $('ads').classList.remove('act'); document.exitPointerLock?.();
+  $('pauseInfo').textContent = (MODES[gameMode].time ? `剩餘 ${Math.ceil(timeLeft)} 秒` : `第 ${wave} 波`) + ` · 得分 ${score}`;
+  mountSettings($('pauseScr')); $('pauseScr').classList.remove('hide'); remoteStatus();
+}
+function resumeGame() {
+  if (state !== 'paused') return; $('pauseScr').classList.add('hide'); mountSettings($('menu')); state = 'play'; clock.getDelta();
+  if (!IS_TOUCH && !remote.on) tl.requestPointerLock?.(); remoteStatus();
+}
+$('bResume').onclick = resumeGame; $('bQuit').onclick = toMenu;
+addEventListener('keydown', e => { if (e.code === 'Escape' || e.code === 'KeyP') { if (state === 'play') pauseGame(); else if (state === 'paused') resumeGame(); } });
+document.addEventListener('pointerlockchange', () => { if (!IS_TOUCH && !remote.on && !document.pointerLockElement && state === 'play' && pointerWasLocked) pauseGame(); pointerWasLocked = !!document.pointerLockElement; });
+let pointerWasLocked = false;
 
 /* ───────────────────────── 手機遙控器（QR Code 配對；中繼 + 直連雙線路） ───────────────────────── */
 const remote = { on: false, live: false, conn: null, relay: null, heardAt: -1e9, p2pAt: -1e9, id: '', y: 0, p: 0, ly: 0, lp: 0, dx: 0, dp: 0, ldx: 0, ldp: 0, u: 0, v: 0, ox: 0, oy: 0, ads: 0, c: 0, sendT: 0 };
@@ -2099,7 +2158,8 @@ function onRemote(d) {
     if (d.c !== remote.c) { remote.c = d.c; remote.ly = remote.y; remote.lp = remote.p; remote.ldx = remote.dx; remote.ldp = remote.dp; }
     if (remote.on && state === 'play') { input.mx = clamp(+d.mx || 0, -1, 1); input.my = clamp(+d.my || 0, -1, 1); input.fire = !!d.f; input.ads = !!d.a; }
   } else if (d.t === 'e') {
-    if (d.k === 'start') { if (state !== 'play' && state !== 'perk') begin('remote'); }
+    if (d.k === 'start') { if (state === 'paused') resumeGame(); else if (state !== 'play' && state !== 'perk') begin('remote'); }
+    else if (d.k === 'pause') { state === 'play' ? pauseGame() : resumeGame(); }
     else if (d.k === 'perk') pickPerk(d.i | 0);
     else if (d.k === 'sens') { sensMul = clamp(Math.round((sensMul + (+d.d || 0)) * 10) / 10, .4, 2.2); LS.set('b2sens', sensMul); $('sens').value = sensMul; remoteStatus(); }   // 手機上調靈敏度
     else if (remote.on && state === 'play') { if (d.k === 'reload') reload(); else if (d.k === 'next') switchWeapon(1); }
@@ -2311,7 +2371,7 @@ function frame() {
   requestAnimationFrame(frame);
   if (needResize) { needResize = false; resize(); }      // 改畫布大小會清空畫面，所以放在這一格開始繪製之前
   const realDt = Math.min(.05, clock.getDelta()); stopT -= realDt; stopCool -= realDt;
-  const dt = realDt * timeScale * (stopT > 0 ? .06 : 1), t = clock.elapsedTime; gameTime += dt;
+  const dt = state === 'paused' ? 0 : realDt * timeScale * (stopT > 0 ? .06 : 1) * (pickOpen ? .3 : 1), t = clock.elapsedTime; gameTime += dt;
   for (const l of lamps) { l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7; }
 
   if (state === 'play') {
@@ -2370,8 +2430,8 @@ function frame() {
     else if (fps > 57 && pixelRatio < Math.min(devicePixelRatio, IS_TOUCH ? 1.5 : 2) - .05 && !document.hidden) { pixelRatio = Math.min(devicePixelRatio, pixelRatio + .1); needResize = true; }
   }
 }
-document.addEventListener('visibilitychange', () => { clock.getDelta(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
-qBase.identity(); setWeapon(0); loadExtModels();
+document.addEventListener('visibilitychange', () => { clock.getDelta(); if (document.hidden) pauseGame(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
+qBase.identity(); setWeapon(0); loadExtModels(); document.body.classList.remove('loading');      // 程式準備好了，按鈕才能按
 // 在選單閒置時逐一預先建立所有武器模型，最後把武器、特效、掉落箱一次編譯好，戰鬥中第一次用到就不會卡
 (function prebuild(i = 0) {
   if (i < WEAPONS.length) { if (state === 'play' || state === 'perk') return setTimeout(() => prebuild(i), 1500); ensureWeapon(WEAPONS[i]); if (WEAPONS[i] !== cur) WEAPONS[i].g.visible = false; return setTimeout(() => prebuild(i + 1), 60); }
@@ -2384,7 +2444,7 @@ qBase.identity(); setWeapon(0); loadExtModels();
 })();
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
-window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, renderer, gt: () => gameTime, dbgFx: () => ({ trauma, stopT, prebuilt, built: WEAPONS.filter(w => w.g).length }), hp: e => e.hp, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
+window.__game = { begin, get state() { return state; }, player, enemies, input, setLook(y, p) { yaw = y; pitch = p; }, hurtPlayer, switchWeapon, reload, remote, onRemote, openPair, get cur() { return cur; }, W: WEAPONS, renderer, pause: () => pauseGame(), resume: () => resumeGame(), picker: () => openPicker(), gt: () => gameTime, dbgFx: () => ({ trauma, stopT, prebuilt, built: WEAPONS.filter(w => w.g).length }), hp: e => e.hp, setSwing: t => { swingT = t; swingHit = true; }, dbgW: () => ({ cur: cur.name, wi, switchT: +switchT.toFixed(2), switchTo, pd: pendingDrop && pendingDrop.name, dropT: +dropT.toFixed(2), throwT, swingT, owned: ownedIdx() }), drop: (x, z) => dropCrate(x, z), crateInfo: () => crates.filter(k => k.life > 0).map(k => WEAPONS[k.wi].name + '@' + k.g.position.z.toFixed(1)).join(','), EXT, rayT: () => rayTargets, solidsL: () => solids, cam: camera, audio: () => ({ loaded: !!SB, off: sOff, sr: SB && SB.sampleRate, state: ac && ac.state, rms: n => { const m = SMAP[n], d = SB.getChannelData(0), sr = SB.sampleRate, f = (a, b) => { let x = 0; for (let i = Math.floor(a * sr); i < Math.floor(b * sr); i++) x += d[i] * d[i]; return Math.sqrt(x / ((b - a) * sr)); }; return [f(m[0] + sOff - .03, m[0] + sOff - .005), f(m[0] + sOff, m[0] + sOff + .03)]; } }), aim: () => [aimU, aimV, yaw, pitch], gun, slow(v) { timeScale = v; }, cyc: () => cycleT > 0 ? cycleT / cycDur : 0, flip: () => flip, scene, THREE, ZB, spawnEnemy, offerPerks, pickPerk, perk, setMode(m) { gameMode = m; refreshModes(); }, get wave() { return wave; }, nuke() { for (const e of [...enemies]) if (!e.dead) killEnemy(e, false, new THREE.Vector3(0, 0, -1)); }, god() { attackGrace = 1e9; }, rp: () => reloadT > 0 ? 1 - reloadT / reloadDur : 0 };
 frame();
 </script>
 </body>
