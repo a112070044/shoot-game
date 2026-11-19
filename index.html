@@ -16,6 +16,8 @@
   #hud{position:fixed;inset:0;pointer-events:none;z-index:3;display:none}
   #hud.on{display:block}
   #aim{position:absolute;inset:0}
+  #fps{position:absolute;left:calc(14px + env(safe-area-inset-left));top:calc(42px + env(safe-area-inset-top));font:11px/1.4 ui-monospace,Menlo,monospace;color:#9fe39a;text-shadow:0 0 3px #000;display:none;white-space:pre}
+  body.showfps #fps{display:block}
   #cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:.8}
   #cross i{position:absolute;background:#e9e2cf;box-shadow:0 0 2px #000}
   #cross i:nth-child(1){left:12px;top:12px;width:2px;height:2px;border-radius:50%}
@@ -146,6 +148,7 @@
   <div id="dmgdir"></div>
   <div id="aim"><div id="cross"><i></i><i></i><i></i><i></i><i></i></div>
   <div id="hit"></div></div>
+  <div id="fps"></div>
   <div id="banner"></div>
   <div id="scope"></div>
   <div id="ammo"><div id="wname">手槍</div><span id="acount">12</span> <small id="amag">/ 12</small></div>
@@ -169,7 +172,7 @@
     <button id="bRemote" class="alt">手機當遙控器 · 掃 QR Code</button>
   </div>
   <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
-  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label></div>
+  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label></div>
   <div class="help" id="help"></div>
   <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
 </div>
@@ -550,22 +553,24 @@ function addLamp(x, z, color, intensity, shadow, cord) {
   shade.position.y = -cord - .05; shade.castShadow = shadow; pivot.add(shade);
   const bulb = new THREE.Mesh(new THREE.SphereGeometry(.05, 8, 6), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(3) }));
   bulb.position.y = -cord - .14; pivot.add(bulb);
-  const light = new THREE.PointLight(color, intensity, 17, 2); light.position.copy(bulb.position);
+  // 會投影的那盞用往下照的聚光燈：燈罩本來就朝下，而且點光源的陰影每格要多畫 6 次場景，聚光燈只要 1 次
+  const light = shadow ? new THREE.SpotLight(color, intensity, 17, 1.25, .55, 2) : new THREE.PointLight(color, intensity, 17, 2); light.position.copy(bulb.position);
   if (shadow) {
+    const tg = new THREE.Object3D(); tg.position.set(0, -cord - 4, 0); pivot.add(tg); light.target = tg;
     light.castShadow = true; light.shadow.mapSize.set(IS_TOUCH ? 512 : 1024, IS_TOUCH ? 512 : 1024);
-    light.shadow.camera.near = .12; light.shadow.camera.far = 17; light.shadow.bias = -.004; light.shadow.normalBias = .04; light.shadow.radius = 3;
+    light.shadow.camera.near = .12; light.shadow.camera.far = 17; light.shadow.bias = -.0015; light.shadow.normalBias = .03; light.shadow.radius = 3;
   }
   pivot.add(light);
+  if (shadow) { const fill = new THREE.PointLight(color, intensity * .55, 14, 2); fill.position.copy(bulb.position); pivot.add(fill); light.userData.fill = fill; }   // 不投影的補光：照亮天花板與牆面上半部（陰影只由聚光燈負責）
   lamps.push({ pivot, light, bulb, base: intensity, bcol: bulb.material.color.clone(), ph: rand(6.28), w1: rand(.5, .7), w2: rand(.35, .5), amp: rand(.02, .035) });
 }
 addLamp(0, 0, 0xffbe73, 11, true, .95);
 addLamp(0, -9.5, 0xffb875, 5, false, .8);
 addLamp(0, 9.5, 0xffb060, 5, false, 1.05);
 
-function setDark(d) { hemi.intensity = d ? .1 : .25; for (const l of lamps) { l.light.intensity = d ? 0 : l.base; l.bulb.material.color.copy(l.bcol).multiplyScalar(d ? .02 : 1); } }
-// 門上的紅色指示燈（恆亮）
+function setDark(d) { hemi.intensity = d ? .1 : .25; for (const l of lamps) { l.light.intensity = d ? 0 : l.base; if (l.light.userData.fill) l.light.userData.fill.intensity = d ? 0 : l.base * .55; l.bulb.material.color.copy(l.bcol).multiplyScalar(d ? .02 : 1); } }
+// 門上的紅色指示燈（恆亮）：只發光、不照明，省下兩盞燈的逐像素計算
 for (const s of [-1, 1]) {
-  const l = new THREE.PointLight(0xff1a08, 3, 8, 2); l.position.set(0, 2.75, s * (D / 2 - .5)); scene.add(l);
   const b = new THREE.Mesh(new THREE.CylinderGeometry(.07, .09, .14, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(2.6, .2, .08) }));
   b.position.set(0, 2.78, s * (D / 2 - .12)); scene.add(b);
 }
@@ -575,7 +580,9 @@ const torch = new THREE.SpotLight(0xe6ecff, 9, 42, .54, .55, .5);
 torch.position.set(.07, -.1, -.12); camera.add(torch); camera.add(torch.target); torch.target.position.set(.01, -.02, -6);
 torch.castShadow = true; torch.shadow.mapSize.set(512, 512); torch.shadow.camera.near = .3; torch.shadow.camera.far = 30; torch.shadow.bias = -.002;
 // 槍口火光
-const muzzleLight = new THREE.PointLight(0xffa64a, 0, 11, 2); camera.add(muzzleLight); muzzleLight.position.set(.16, -.1, -.75);
+// 槍口火光與爆炸光共用一盞燈（兩者很少同時發生），少算一盞燈
+const fxLight = new THREE.PointLight(0xffa64a, 0, 11, 2); scene.add(fxLight); let fxDecay = 28;
+function muzzleFlashLight(v) { if (fxLight.intensity > v * 1.5) return; muzzle.getWorldPosition(fxLight.position); fxLight.color.setHex(0xffa64a); fxLight.distance = 11; fxLight.intensity = v; fxDecay = 28; }
 
 /* ───────────────────────── 槍 ───────────────────────── */
 const gun = new THREE.Group(); camera.add(gun);
@@ -1736,7 +1743,7 @@ function fire() {
   const scoped = w.scope && ads > .85;
   w.ammo--; if (w.drop && w.ammo <= 0) pendingDrop = w; fireCD += w.cd; kick = 1; if (w.cycle) { cycleT = cycDur = w.cycle; cycSnd = false; cycEject = true; } else ejectCasing(w);
   recoilP += w.kick * perk.recoil * (1 - ads * .4); addShake(.012 * w.gk); heat = Math.min(1, heat + w.heat);
-  flashT = .05; flash.visible = true; flash.rotation.z = rand(6.28); flash.scale.setScalar(rand(.75, 1.25) * w.flash); muzzleLight.intensity = 14 * w.flash;
+  flashT = .05; flash.visible = true; flash.rotation.z = rand(6.28); flash.scale.setScalar(rand(.75, 1.25) * w.flash); muzzleFlashLight(14 * w.flash);
   sfx.shot(w); alertNoise(40); navigator.vibrate?.(12); remoteSend({ t: 'v', ms: 25 });
   camera.updateMatrixWorld(); muzzle.getWorldPosition(vMz); camera.getWorldPosition(vCam);
   { const tv = Math.tan(camera.fov * Math.PI / 360); vAim.set(aimU * tv * camera.aspect, aimV * tv, -1).normalize().transformDirection(camera.matrixWorld); }   // 朝準星所在方向射擊
@@ -1826,7 +1833,7 @@ function launchNow(w) {
   const o = projMesh(w.proj); scene.add(o);
   alertNoise(w.proj === 'grenade' ? 3 : 40);
   if (w.proj === 'grenade') { o.position.copy(vCam).addScaledVector(vAim, .4); o.position.y -= .1; sfx.swish(); }
-  else { muzzle.getWorldPosition(o.position); kick = 1; recoilP += w.kick; addShake(.02 * w.gk); flashT = .06; flash.visible = true; flash.scale.setScalar(1.6); muzzleLight.intensity = 20; w.proj === 'rocket' ? sfx.launch() : sfx.thump(); }
+  else { muzzle.getWorldPosition(o.position); kick = 1; recoilP += w.kick; addShake(.02 * w.gk); flashT = .06; flash.visible = true; flash.scale.setScalar(1.6); muzzleFlashLight(20); w.proj === 'rocket' ? sfx.launch() : sfx.thump(); }
   const up = w.proj === 'grenade' ? 2.2 : w.proj === 'gl' ? .5 : 0;
   projs.push({ o, k: w.proj, K, vx: vAim.x * K.speed, vy: vAim.y * K.speed + up, vz: vAim.z * K.speed, t: 0, b: 0 });
   if (w.ammo <= 0) pendingDrop = w;
@@ -1857,7 +1864,6 @@ function updateProjs(dt) {
   }
 }
 // 爆炸：範圍傷害與擊退、閃光、火球、煙、焦痕；離太近自己也會受傷
-const boomLight = new THREE.PointLight(0xff9a40, 0, 16, 2); scene.add(boomLight);
 const booms = [], scorches = [];
 {
   const sm = new THREE.SpriteMaterial({ map: flashMat.map, color: new THREE.Color(4, 2.4, 1), blending: THREE.AdditiveBlending, depthWrite: false, fog: false, transparent: true });
@@ -1881,7 +1887,7 @@ function explode(p, R, dmg) {
   const dp = Math.hypot(player.x - p.x, player.y - .7 - p.y, player.z - p.z);
   if (dp < R * .9) hurtPlayer(Math.round(clamp(dmg * 2.2 * (1 - dp / R), 4, 35)), p.x, p.z);
   // 畫面
-  boomLight.position.set(p.x, Math.max(.6, p.y + .3), p.z); boomLight.intensity = calm ? 30 : 90; hitStop(.07);
+  fxLight.position.set(p.x, Math.max(.6, p.y + .3), p.z); fxLight.color.setHex(0xff9a40); fxLight.distance = 16; fxLight.intensity = calm ? 30 : 90; fxDecay = 9; hitStop(.07);
   const b = booms.find(b => b.t >= 1) || booms[0]; b.t = 0; b.R = R; b.s.position.set(p.x, Math.max(.5, p.y), p.z); b.s.visible = true;
   for (let i = 0; i < 70; i++) { const a = rand(6.28), u = rand(-.2, 1), v = rand(3, 13); sparks.emit(p.x, p.y + .1, p.z, Math.cos(a) * v * Math.sqrt(1 - u * u), Math.abs(u) * v + 1, Math.sin(a) * v * Math.sqrt(1 - u * u), rand(.2, .9), rand(.02, .05), 4, rand(1.4, 2.4), .5, 9.8); }
   for (let i = 0; i < 26; i++) { const a = rand(6.28), v = rand(.4, 2.2); smoke.emit(p.x + rand(-.4, .4), p.y + rand(0, .6), p.z + rand(-.4, .4), Math.cos(a) * v, rand(.4, 1.6), Math.sin(a) * v, rand(1.4, 3), rand(.35, .7), .13, .12, .11, -.25); }
@@ -1890,7 +1896,6 @@ function explode(p, R, dmg) {
   navigator.vibrate?.(120); remoteSend({ t: 'v', ms: 160 });
 }
 function updateBooms(dt) {
-  boomLight.intensity *= Math.exp(-dt * 9);
   for (const b of booms) { if (b.t >= 1) continue; b.t += dt / .45; const k = Math.min(1, b.t); b.s.scale.setScalar(b.R * (.5 + 1.3 * Math.sqrt(k))); b.s.material.opacity = (1 - k) * (calm ? .35 : 1); b.s.material.rotation += dt; if (k >= 1) b.s.visible = false; }
 }
 // 武器掉落箱：木箱 + 發光邊框 + 名稱標籤；走過去撿起
@@ -1946,6 +1951,8 @@ $('volS').value = VOL.sfx; $('volA').value = VOL.amb; $('calm').checked = calm;
 $('volS').oninput = e => { VOL.sfx = +e.target.value; LS.set('b2vs', VOL.sfx); applyVolumes(); };
 $('volA').oninput = e => { VOL.amb = +e.target.value; LS.set('b2va', VOL.amb); applyVolumes(); };
 $('calm').onchange = e => { calm = e.target.checked; LS.set('b2calm', calm ? '1' : '0'); };
+$('fpsOn').checked = LS.get('b2fps') === '1'; document.body.classList.toggle('showfps', $('fpsOn').checked);
+$('fpsOn').onchange = e => { LS.set('b2fps', e.target.checked ? '1' : '0'); document.body.classList.toggle('showfps', e.target.checked); };
 
 // 強化（每波結束三選一）
 const perk = {};
@@ -2145,6 +2152,7 @@ $('bRemote').onclick = openPair;
 $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classList.remove('hide'); };
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
+const fpsW = { n: 0, sum: 0, max: 0, last: performance.now() };
 const clock = new THREE.Clock(); let gameTime = 0, needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, heartT = 0, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
@@ -2331,7 +2339,7 @@ function frame() {
     .multiply(qTmp.setFromAxisAngle(Y, sa * .5 * Math.sin(shakeT * 27.1 + 2))).multiply(qTmp.setFromAxisAngle(Z, sa * .6 * Math.sin(shakeT * 23.7 + 1) + deathTilt * .9));
 
   if (flashT > 0) { flashT -= dt; if (flashT <= 0) flash.visible = false; }
-  muzzleLight.intensity *= Math.exp(-dt * 28);
+  fxLight.intensity *= Math.exp(-dt * fxDecay);
   updateSpits(dt); updatePickups(dt, t); updateDebris(dt); updateProjs(dt); updateBooms(dt); updateCrates(dt, t);
   const bp = bossE && !bossE.dead ? Math.ceil(clamp(bossE.hp / bossE.maxHp, 0, 1) * 100) : -1;
   if (bp !== lastBoss) { lastBoss = bp; $('bossbar').style.opacity = bp < 0 ? 0 : 1; $('bossbar').firstChild.style.width = Math.max(0, bp) + '%'; }
@@ -2349,6 +2357,9 @@ function frame() {
   if (remote.live) { if (!remoteLive()) remoteLost(); else if (performance.now() > remote.sendT) { remote.sendT = performance.now() + 200; remoteStatus(); } }   // 用實際時間計時，主機掉幀時也不會讓手機誤判斷線
 
   composer.render(dt);
+  // FPS 顯示：每半秒更新一次平均幀率、平均與最慢一格的毫秒數、解析度倍率、每格三角形數
+  fpsW.n++; const nowT = performance.now(), fd = nowT - fpsW.last; fpsW.last = nowT; fpsW.max = Math.max(fpsW.max, fd); fpsW.sum += fd;
+  if (fpsW.sum > 500) { if (document.body.classList.contains('showfps')) $('fps').textContent = `${(1000 * fpsW.n / fpsW.sum).toFixed(0)} fps  ${(fpsW.sum / fpsW.n).toFixed(1)} ms（最慢 ${fpsW.max.toFixed(0)}）\n解析度 ×${pixelRatio.toFixed(2)}  ${(renderer.info.render.triangles / 1000).toFixed(0)}k 三角形`; fpsW.n = fpsW.sum = fpsW.max = 0; }
 
   // 動態解析度：維持流暢
   fpsAcc += dt / timeScale; fpsN++;
