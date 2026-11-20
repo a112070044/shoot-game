@@ -24,7 +24,7 @@
   #wpick{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:none;grid-template-columns:repeat(2,minmax(130px,auto));gap:6px;pointer-events:auto;max-height:calc(100% - 24px);overflow-y:auto}
   #wpick.on{display:grid}
   #wpick div{padding:8px 12px;border:1px solid rgba(216,210,196,.45);border-radius:6px;background:rgba(12,10,8,.82);font-size:14px;letter-spacing:.1em;display:flex;justify-content:space-between;gap:12px}
-  #wpick div.cur{border-color:#e8c040;color:#ffd860}#wpick small{opacity:.6;font-variant-numeric:tabular-nums}
+  #wpick div.cur{border-color:#e8c040;color:#ffd860}#wpick div.hov{background:rgba(185,58,44,.75);border-color:#fff}#wpick small{opacity:.6;font-variant-numeric:tabular-nums}
   #fps{position:absolute;left:calc(14px + env(safe-area-inset-left));top:calc(42px + env(safe-area-inset-top));font:11px/1.4 ui-monospace,Menlo,monospace;color:#9fe39a;text-shadow:0 0 3px #000;display:none;white-space:pre}
   body.showfps #fps{display:block}
   #cross{position:absolute;left:50%;top:50%;width:26px;height:26px;margin:-13px 0 0 -13px;opacity:.8}
@@ -1017,7 +1017,7 @@ function tStart(e) {
   for (const t of e.changedTouches) {
     const el = t.target.closest ? t.target.closest('.btn') : null; let type;
     if (el && el.id === 'reload') { reload(); continue; }
-    if (el && el.id === 'swap') { if (pickOpen) { closePicker(); continue; } clearTimeout(swapHold); swapHold = setTimeout(openPicker, 380); type = 'swap'; tmap.set(t.identifier, { type }); continue; }
+    if (el && el.id === 'swap') { if (pickOpen) { closePicker(); continue; } clearTimeout(swapHold); swapHold = setTimeout(openPicker, 380); tmap.set(t.identifier, { type: 'swap', sx: t.clientX, sy: t.clientY, x: t.clientX, y: t.clientY, drag: false }); continue; }
     if (el && el.id === 'pauseBtn') { pauseGame(); continue; }
     if (pickOpen) closePicker();
     if (el && el.id === 'ads') { input.ads = !input.ads; el.classList.toggle('act', input.ads); continue; }
@@ -1037,6 +1037,10 @@ function tMove(e) {
       let dx = t.clientX - s.sx, dy = t.clientY - s.sy; const l = Math.hypot(dx, dy), R = 50;
       if (l > R) { dx *= R / l; dy *= R / l; }
       input.mx = dx / R; input.my = dy / R; knob.style.transform = `translate(${dx}px,${dy}px)`;
+    } else if (s.type === 'swap') {
+      // 按住「換槍」滑動：清單馬上出現，手指滑到哪把就選哪把，放開即切換（不會拿來轉視角）
+      if (Math.hypot(t.clientX - s.sx, t.clientY - s.sy) > 14) { s.drag = true; if (!pickOpen) { clearTimeout(swapHold); openPicker(); } }
+      if (pickOpen) hoverPick(t.clientX, t.clientY);
     } else { lookDX += t.clientX - s.x; lookDY += t.clientY - s.y; }
     s.x = t.clientX; s.y = t.clientY;
   }
@@ -1046,7 +1050,10 @@ function tEnd(e) {
     const s = tmap.get(t.identifier); if (!s) continue; tmap.delete(t.identifier);
     if (s.type === 'move') { input.mx = input.my = 0; stick.style.display = 'none'; }
     if (s.type === 'fire') { input.fire = false; $('fire').classList.remove('act'); }
-    if (s.type === 'swap' && swapHold) { clearTimeout(swapHold); swapHold = 0; switchWeapon(1); }      // 短按：輪流切換
+    if (s.type === 'swap') {
+      if (swapHold) { clearTimeout(swapHold); swapHold = 0; switchWeapon(1); }      // 短按：輪流切換
+      else if (pickOpen) { const d = hoverPick(t.clientX, t.clientY); if (d) { switchWeapon(0, +d.dataset.i); closePicker(); } else if (s.drag) closePicker(); }   // 滑到空白處放開＝取消；長按不動放開＝清單留著讓你點
+    }
   }
 }
 const tl = $('touch');
@@ -1055,7 +1062,7 @@ let swapHold = 0, pickOpen = false;
 function openPicker() {
   swapHold = 0; if (state !== 'play') return; pickOpen = true; const box = $('wpick'); box.innerHTML = '';
   for (const i of ownedIdx()) {
-    const w = WEAPONS[i], d = document.createElement('div'); d.className = w === cur ? 'cur' : ''; d.innerHTML = '<span></span><small></small>';
+    const w = WEAPONS[i], d = document.createElement('div'); d.className = w === cur ? 'cur' : ''; d.dataset.i = i; d.innerHTML = '<span></span><small></small>';
     d.firstChild.textContent = w.name; d.lastChild.textContent = w.melee ? '∞' : w.drop ? w.ammo : w.ammo + '/' + w.mag;
     const pickIt = ev => { ev.preventDefault(); ev.stopPropagation(); switchWeapon(0, i); closePicker(); };
     d.addEventListener('touchstart', pickIt, { passive: false }); d.addEventListener('click', pickIt); box.appendChild(d);
@@ -1063,6 +1070,7 @@ function openPicker() {
   box.classList.add('on'); navigator.vibrate?.(15);
 }
 function closePicker() { pickOpen = false; $('wpick').classList.remove('on'); }
+function hoverPick(x, y) { const e = document.elementFromPoint(x, y), d = e && e.closest ? e.closest('#wpick > div') : null; for (const c of $('wpick').children) c.classList.toggle('hov', c === d); return d; }
 for (const el of [tl, $('fire'), $('reload'), $('center'), $('swap'), $('ads'), $('pauseBtn')]) {
   el.addEventListener('touchstart', tStart, { passive: false }); el.addEventListener('touchmove', tMove, { passive: false });
   el.addEventListener('touchend', tEnd); el.addEventListener('touchcancel', tEnd);
@@ -2497,6 +2505,7 @@ function updateWeapon(dt, mv) {
 function updatePlayer(dt) {
   // 視角（開鏡時依視野縮小靈敏度）
   const fovK = Math.tan(camera.fov * Math.PI / 360) / Math.tan(baseFov * Math.PI / 360), sens = (IS_TOUCH ? .0042 : .0044) * fovK * sensMul;
+  if (!Number.isFinite(lookDX) || !Number.isFinite(lookDY)) lookDX = lookDY = 0;   // 任何壞掉的觸控數值都不能讓視角變成 NaN（整個畫面會黑掉）
   if (remote.on) {
     // 指向式瞄準：螢幕在正前方，所以手機指到哪、準星就到哪；準星靠近畫面邊緣時視角自動往那邊轉。
     const G = 3.6 * sensMul, k = 1 - Math.exp(-dt * 18), f = 1 - ads, tanV = Math.tan(camera.fov * Math.PI / 360), tanH = tanV * camera.aspect;
@@ -2524,6 +2533,7 @@ function updatePlayer(dt) {
   }
   swayV.x += (clamp(lookDX * .0006, -.03, .03) - swayV.x) * Math.min(1, dt * 10); swayV.y += (clamp(lookDY * .0006, -.03, .03) - swayV.y) * Math.min(1, dt * 10);
   lookDX = lookDY = 0;
+  if (!Number.isFinite(yaw) || !Number.isFinite(pitch)) { yaw = 0; pitch = 0; }
   // 移動（開鏡時放慢）
   let mx = input.mx, my = input.my; const K = input.keys;
   if (K.KeyW || K.ArrowUp) my -= 1; if (K.KeyS || K.ArrowDown) my += 1; if (K.KeyA || K.ArrowLeft) mx -= 1; if (K.KeyD || K.ArrowRight) mx += 1;
