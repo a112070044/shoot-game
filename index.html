@@ -97,7 +97,10 @@
   #cPerks{display:flex;flex-direction:column;gap:10px;width:86%}
   #cPerks .pk{width:auto;flex-direction:row;align-items:center;justify-content:space-between;padding:14px}
   #starts{display:flex;flex-direction:column;align-items:center}
-  #loadMsg{display:none;font-size:13px;letter-spacing:.3em;opacity:.7;margin:-6px 0 10px;animation:blink 1.2s ease-in-out infinite alternate}
+  #loadMsg{display:none;width:min(280px,70vw);margin:-4px 0 12px;font-size:12px;letter-spacing:.2em}
+  #loadTxt{display:flex;justify-content:space-between;opacity:.75;margin-bottom:6px}#loadTxt span:first-child{animation:blink 1.2s ease-in-out infinite alternate}
+  #loadBar{height:4px;border-radius:2px;background:rgba(230,220,196,.15);overflow:hidden}
+  #loadBar i{display:block;height:100%;width:0;background:linear-gradient(90deg,#8e1a12,#e8c040);box-shadow:0 0 8px rgba(232,192,64,.6)}
   @keyframes blink{from{opacity:.25}to{opacity:.8}}
   body.loading #loadMsg{display:block} body.loading #menu button{opacity:.3;pointer-events:none}
   .screen{overflow-y:auto;justify-content:flex-start}
@@ -181,7 +184,7 @@
 <div class="screen" id="menu">
   <h1>地下室</h1>
   <div class="sub">B2 · 燈快熄了</div>
-  <div id="loadMsg">載入中…</div>
+  <div id="loadMsg"><div id="loadTxt"><span id="loadStep">下載遊戲引擎</span><span id="loadPct">0%</span></div><div id="loadBar"><i id="loadFill"></i></div></div>
   <div id="modes"></div>
   <div id="maps"></div>
   <div id="modeDesc"></div>
@@ -366,15 +369,26 @@ window.B2 = {
   "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
 } }
 </script>
+<script>
+// 載入進度條：顯示值平滑追上目前進度，等待下一步時會慢慢往前爬（不會停在原地像當機）
+window.LOAD = { p: 0, v: 0, cap: 20, set(p, step, cap) { this.p = Math.max(this.p, p); this.cap = Math.max(this.p, cap ?? p + 8); if (step) document.getElementById('loadStep').textContent = step; } };
+(function tick() {
+  const L = LOAD; L.v += (L.p - L.v) * .15; if (L.v < L.cap - .5) L.v += (L.cap - L.v) * .004;
+  const f = document.getElementById('loadFill'); if (f) { f.style.width = L.v.toFixed(1) + '%'; document.getElementById('loadPct').textContent = Math.floor(L.v) + '%'; }
+  if (document.body.classList.contains('loading')) requestAnimationFrame(tick);
+})();
+</script>
 <script type="module">
+const nextPaint = () => new Promise(r => requestAnimationFrame(() => setTimeout(r)));   // 讓畫面有機會更新進度條
 if (window.__CTRL) await new Promise(() => { });   // 遙控器頁面不載入 3D 遊戲
-const THREE = await import('three');
+const THREE = await import('three'); LOAD.set(25, '下載畫面特效', 32);
 const { EffectComposer } = await import('three/addons/postprocessing/EffectComposer.js');
 const { RenderPass } = await import('three/addons/postprocessing/RenderPass.js');
 const { UnrealBloomPass } = await import('three/addons/postprocessing/UnrealBloomPass.js');
 const { OutputPass } = await import('three/addons/postprocessing/OutputPass.js');
 const { ShaderPass } = await import('three/addons/postprocessing/ShaderPass.js');
 const { RoomEnvironment } = await import('three/addons/environments/RoomEnvironment.js');
+LOAD.set(32, '產生牆面與地板材質', 48); await nextPaint();
 
 const $ = id => document.getElementById(id);
 const IS_TOUCH = matchMedia('(pointer:coarse)').matches || 'ontouchstart' in window;
@@ -496,7 +510,8 @@ function concreteMat(t, extra = {}) {
   return new THREE.MeshStandardMaterial({ map: t.map, normalMap: t.normalMap, roughnessMap: t.orm, aoMap: t.orm, metalness: 0, ...extra });
 }
 const TS = IS_TOUCH ? 512 : 1024;
-const tFloor = makeConcrete(TS, 11, 'floor'), tWall = makeConcrete(TS, 29, 'wall'), tCeil = makeConcrete(256, 53, 'ceil');
+const tFloor = makeConcrete(TS, 11, 'floor'); LOAD.set(38); await nextPaint();
+const tWall = makeConcrete(TS, 29, 'wall'), tCeil = makeConcrete(256, 53, 'ceil'); LOAD.set(46, '搭建場景', 55); await nextPaint();
 const mFloor = concreteMat(tFloor, { normalScale: new THREE.Vector2(1.2, 1.2) });
 const mWall = concreteMat(tWall, { normalScale: new THREE.Vector2(1.1, 1.1) });
 const mCeil = concreteMat(tCeil, { color: 0x9a9a96 });
@@ -1636,8 +1651,10 @@ function findBones(root) {
   return out;
 }
 const _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3(), _v3 = new THREE.Vector3(), _q1 = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _q3 = new THREE.Quaternion();
-function loadExtModels() {
-  if (location.protocol === 'file:') return;
+function loadExtModels(onProg = () => { }) {
+  const ids = Object.keys(EXT).filter(id => EXT[id].url), fr = {}, upd = () => onProg(ids.reduce((a, id) => a + (fr[id] || 0), 0) / Math.max(1, ids.length));
+  const done = id => { fr[id] = 1; upd(); };
+  if (location.protocol === 'file:' || !ids.length) return onProg(1);
   Promise.all([import('three/addons/loaders/GLTFLoader.js'), import('three/addons/libs/meshopt_decoder.module.js'), import('three/addons/utils/SkeletonUtils.js')]).then(([{ GLTFLoader }, { MeshoptDecoder }, SU]) => {
     EXT.SU = SU; const L = new GLTFLoader(); L.setMeshoptDecoder(MeshoptDecoder);
     for (const id in EXT) {
@@ -1665,9 +1682,10 @@ function loadExtModels() {
         M.proto = proto; M.hits = hits;
         // 預先編譯著色器，避免第一隻出現時卡頓
         const tmp = SU.clone(proto); tmp.position.set(0, -50, 0); scene.add(tmp); try { renderer.compile(scene, camera); } catch (err) { } scene.remove(tmp);
-      }, undefined, () => { });
+        done(id);
+      }, x => { if (x.total) { fr[id] = Math.min(.95, x.loaded / x.total * .95); upd(); } }, () => done(id));
     }
-  }).catch(() => { });
+  }).catch(() => onProg(1));
 }
 function buildExtEnemy(e, id, tint) {
   const M = EXT[id], inst = EXT.SU.clone(M.proto); e.body.add(inst); e.ext = id;
@@ -2132,7 +2150,11 @@ function refreshModes() {
   $('modes').innerHTML = ''; 
   for (const k in MODES) { const b = document.createElement('button'); b.className = 'chip' + (k === gameMode ? ' on' : ''); b.textContent = MODES[k].n; b.onclick = () => { gameMode = k; LS.set('b2mode', k); refreshModes(); }; $('modes').appendChild(b); }
   $('maps').innerHTML = '';
-  for (const k in MAPS) { const b = document.createElement('button'); b.className = 'chip' + (k === mapSel ? ' on' : ''); b.textContent = '地圖 · ' + MAPS[k].n; b.onclick = () => { mapSel = k; LS.set('b2map', k); setMap(k); refreshModes(); }; $('maps').appendChild(b); }
+  for (const k in MAPS) { const b = document.createElement('button'); b.className = 'chip' + (k === mapSel ? ' on' : ''); b.textContent = '地圖 · ' + MAPS[k].n; b.onclick = async () => {
+      mapSel = k; LS.set('b2map', k); refreshModes();
+      if (k === 'yizhuang' && !MAPS[k].built && loadDone) { document.body.classList.add('loading'); LOAD.p = LOAD.v = 0; LOAD.set(15, '建造' + MAPS[k].n, 90); requestAnimationFrame(function t() { const L = LOAD; L.v += (L.p - L.v) * .15; if (L.v < L.cap - .5) L.v += (L.cap - L.v) * .02; $('loadFill').style.width = L.v + '%'; $('loadPct').textContent = Math.floor(L.v) + '%'; if (document.body.classList.contains('loading')) requestAnimationFrame(t); }); await nextPaint(); await nextPaint(); }
+      setMap(k); if (loadDone && document.body.classList.contains('loading')) endBar();
+    }; $('maps').appendChild(b); }
   $('modeDesc').textContent = MODES[gameMode].d + (best(gameMode) ? `　·　最佳 ${best(gameMode)}` : '');
 }
 refreshModes();
@@ -2612,18 +2634,31 @@ function frame() {
   }
 }
 document.addEventListener('visibilitychange', () => { clock.getDelta(); if (document.hidden) pauseGame(); if (ac) document.hidden ? ac.suspend() : ac.resume(); });
-qBase.identity(); setWeapon(0); if (mapSel !== 'basement') setMap(mapSel); if (!IS_TOUCH && $('aoOn').checked) setAO(true); loadExtModels(); document.body.classList.remove('loading');      // 程式準備好了，按鈕才能按
+// 載入順序：場景好了 → 怪物模型（依下載量算進度）→ 武器模型預先建好；全部完成（或等太久）才開放按鈕
+let modelsP = 0, weaponsP = 0, loadDone = false;
+function loadProgress() {
+  if (loadDone) return;
+  LOAD.set(60 + modelsP * 30 + weaponsP * 10, modelsP < 1 ? '載入怪物模型' : '準備武器', modelsP < 1 ? 60 + (modelsP + .15) * 30 : 100);
+  if (modelsP >= 1 && weaponsP >= 1) finishLoading();
+}
+function finishLoading() { if (loadDone) return; loadDone = true; endBar(); }
+function endBar() { LOAD.set(100, '完成'); const t0 = performance.now(); (function wait() { if (LOAD.v > 98.5 || performance.now() - t0 > 700) { LOAD.v = 100; $('loadFill').style.width = '100%'; $('loadPct').textContent = '100%'; setTimeout(() => document.body.classList.remove('loading'), 150); } else requestAnimationFrame(wait); })(); }
+setTimeout(finishLoading, 30000);   // 網路太慢時最多等 30 秒，之後模型會在背景繼續下載（還沒到的怪物先用內建模型）
+qBase.identity(); setWeapon(0);
+if (mapSel !== 'basement') { LOAD.set(52, '建造' + MAPS[mapSel].n, 58); await nextPaint(); setMap(mapSel); }
+if (!IS_TOUCH && $('aoOn').checked) setAO(true);
+LOAD.set(60, '載入怪物模型', 64); loadExtModels(p => { modelsP = p; loadProgress(); });
 // 可安裝成 App：註冊離線快取（只在 HTTPS 或本機開發時）
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) navigator.serviceWorker.register('sw.js').catch(() => { });
 // 在選單閒置時逐一預先建立所有武器模型，最後把武器、特效、掉落箱一次編譯好，戰鬥中第一次用到就不會卡
 (function prebuild(i = 0) {
-  if (i < WEAPONS.length) { if (state === 'play' || state === 'perk') return setTimeout(() => prebuild(i), 1500); ensureWeapon(WEAPONS[i]); if (WEAPONS[i] !== cur) WEAPONS[i].g.visible = false; return setTimeout(() => prebuild(i + 1), 60); }
+  if (i < WEAPONS.length) { if (state === 'play' || state === 'perk') return setTimeout(() => prebuild(i), 1500); ensureWeapon(WEAPONS[i]); if (WEAPONS[i] !== cur) WEAPONS[i].g.visible = false; weaponsP = (i + 1) / (WEAPONS.length + 1); loadProgress(); return setTimeout(() => prebuild(i + 1), 60); }
   const tmp = [], show = o => { if (!o.visible) { o.visible = true; tmp.push(o); } };
   WEAPONS.forEach(w => { show(w.g); w.g.traverse(show); }); show(crates[0].g); show(booms[0].s); show(scorches[0]);
   const extra = ['rocket', 'gl', 'grenade'].map(k => { const m = projMesh(k); m.position.set(0, -20, 0); scene.add(m); return m; });
   try { renderer.compile(scene, camera); } catch (e) { }
   for (const o of tmp) o.visible = false; for (const m of extra) scene.remove(m); WEAPONS.forEach(w => { if (w.g) w.g.visible = w === cur; });
-  prebuilt = true;
+  prebuilt = true; weaponsP = 1; loadProgress();
 })();
 // 主選單背景站一隻喪屍：順便預先編譯喪屍的著色器，避免開局第一隻出現時畫面卡頓閃黑（開始遊戲時會清掉）
 { spawnEnemy('walker'); const e = enemies[0]; e.x = 1.6; e.z = -2.5; e.speed = 0; e.mode = 'chase'; }
