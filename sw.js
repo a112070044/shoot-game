@@ -2,7 +2,7 @@
 // - 網頁本身（index.html）網路優先：有網路時永遠拿最新版，沒網路才用快取
 // - 其他檔案（音效、模型、圖示、three.js）先用快取、同時在背景更新，下次開啟就是新版
 // 改了 sw.js 才需要調高版本號
-const CACHE = 'b2-v4';
+const CACHE = 'b2-v5';
 const CORE = ['./', 'index.html', 'manifest.webmanifest', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/icon-180.png', 'sfx/sfx.mp3', 'sfx/drip.mp3', 'sfx/drone.mp3'];
 
 self.addEventListener('install', e => {

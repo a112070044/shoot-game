@@ -55,6 +55,8 @@
   #banner{position:absolute;left:0;right:0;top:26%;text-align:center;font-size:26px;letter-spacing:.5em;
     opacity:0;transition:opacity .5s;text-shadow:0 0 12px #000}
   #banner.on{opacity:.92}
+  #tut{position:absolute;left:50%;top:22%;transform:translateX(-50%);max-width:80vw;padding:10px 18px;border:1px solid rgba(232,192,64,.6);border-radius:8px;background:rgba(10,8,6,.72);color:#f3e6c4;font-size:15px;letter-spacing:.08em;text-align:center;opacity:0;transition:opacity .35s;pointer-events:none}
+  #tut.on{opacity:1}#tut small{display:block;margin-top:4px;font-size:11px;opacity:.55;letter-spacing:.2em}
   #tip{position:absolute;left:0;right:0;bottom:calc(18px + env(safe-area-inset-bottom));text-align:center;font-size:12px;opacity:0;transition:opacity .4s}
   #tip.on{opacity:.7}
   .btn{position:absolute;border-radius:50%;border:1.5px solid rgba(216,210,196,.5);background:rgba(20,18,16,.35);
@@ -171,6 +173,7 @@
   <div id="scope"></div>
   <div id="ammo"><div id="wname">手槍</div><span id="acount">12</span> <small id="amag">/ 12</small></div>
   <div id="tip"></div>
+  <div id="tut"></div>
   <div id="stick"><div id="knob"></div></div>
   <div class="btn" id="fire">射擊</div>
   <div class="btn" id="reload">換彈</div>
@@ -194,7 +197,7 @@
     <button id="bRemote" class="alt">手機當遙控器 · 掃 QR Code</button>
   </div>
   <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
-  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label><label class="chk" id="aoLbl"><input type="checkbox" id="aoOn">環境光遮蔽</label></div>
+  <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label><label class="chk" id="assistLbl"><input type="checkbox" id="assistOn">輔助瞄準</label><label class="chk" id="aoLbl"><input type="checkbox" id="aoOn">環境光遮蔽</label></div>
   <div class="help" id="help"></div>
   <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
 </div>
@@ -220,6 +223,7 @@
   <h1 id="overTitle">你倒下了</h1>
   <div id="final"></div>
   <button id="bAgain">再來一次</button>
+  <button id="bShare" class="alt">分享戰績圖</button>
   <button id="bMenu" class="alt">回主選單</button>
 </div>
 <div id="err"></div>
@@ -673,7 +677,9 @@ function buildYizhuang() {
     if (!opts.floor) for (const bx of [-.62, .62]) { const [px, pz] = at(bx, 0); benches.push(mat(px, 0, pz, ry)); }
     const [fx, fz] = at(1.051, 0); fronts.push(mat(fx, y0 + .3, fz, ry + Math.PI / 2));
     for (const bx of [-.55, .55]) { const [px, pz] = at(bx, 0); ob.push({ x: px, z: pz, r: .5 }); }
+    for (const sd of [-1, 1]) { const [sx, sz] = at(0, sd * .95); if (Math.abs(sx) < hw - .5 && Math.abs(sz) < hd - .5) coffins.push({ sx, sz }); }
   };
+  const coffins = M.coffins = [];
   for (const s of [-1, 1]) for (const z of [-12, -8.5, -5, 5, 8.5, 12]) {
     if (s === 1 && z === -5) { coffin(6.6, -5.2, Math.PI + .25, { floor: true, open: true }); continue; }   // 掀開的那口
     if (s === -1 && z === 12) continue;
@@ -742,7 +748,7 @@ function setMap(id) {
   solids.length = 0; solids.push(...SHELL.solids, ...M.solids);
   lamps.length = 0; lamps.push(...M.lamps);
   SHELL.floor.material = M.floorMat || mFloor; SHELL.ceil.material = M.ceilMat || mCeil; for (const w of SHELL.walls) w.material = M.wallMat || mWall;
-  hemi.color.set(id === 'yizhuang' ? 0x33302a : 0x27313a);
+  hemi.color.set(id === 'yizhuang' ? 0x33302a : 0x27313a); ambForMap(id);
   // 地下室的門上紅燈只屬於地下室
   for (const b of doorLights) b.visible = id === 'basement';
 }
@@ -937,8 +943,46 @@ function initAudio() {
     sOff = pi / b.sampleRate - .203; SB = b;
   }).catch(() => { });
   const loop = (u, L, vol, dest) => get(u).then(b => { const s = ac.createBufferSource(); s.buffer = b; s.loop = true; s.loopStart = .3; s.loopEnd = .3 + L; const lg = ac.createGain(); lg.gain.value = vol; s.connect(lg); lg.connect(dest); s.start(0, .3); }).catch(() => { });
-  loop('sfx/drip.mp3', SMAP._loops.drip, .9, ambFx);    // 地下室滴水（真實錄音，進殘響）
+  dripBus = ac.createGain(); dripBus.connect(ambFx);
+  loop('sfx/drip.mp3', SMAP._loops.drip, .9, dripBus);    // 地下室滴水（真實錄音，進殘響）
+  // 義莊的風：兩層濾波雜訊（低沉的風壓＋從門縫鑽進來的細細呼嘯），濾波頻率由 ambTick 慢慢飄動
+  windG = ac.createGain(); windG.gain.value = 0; windG.connect(ambFx);
+  for (const [f, q, v] of [[380, .8, .55], [1150, 9, .22]]) {
+    const w = ac.createBufferSource(); w.buffer = noiseBuf; w.loop = true; w.playbackRate.value = .5 + Math.random() * .1;
+    const bf = ac.createBiquadFilter(); bf.type = 'bandpass'; bf.frequency.value = f; bf.Q.value = q; const wg = ac.createGain(); wg.gain.value = v;
+    w.connect(bf); bf.connect(wg); wg.connect(windG); w.start(); windF.push({ f: bf, g: wg, base: f, v });
+  }
+  ambForMap(curMap);
   loop('sfx/drone.mp3', SMAP._loops.drone, 1, droneF);   // 低沉的空間底噪：殭屍越靠近越大聲、越亮（緊張感）
+}
+let dripBus = null, windG = null; const windF = [];
+// 各地圖的環境音比重：地下室＝滴水；義莊＝風聲為主、偶爾木頭嘎吱與遠處道士搖鈴
+function ambForMap(id) { if (!ac || !dripBus) return; const t = ac.currentTime, y = id === 'yizhuang'; dripBus.gain.setTargetAtTime(y ? .18 : 1, t, .8); windG.gain.setTargetAtTime(y ? .32 : 0, t, .8); }
+function ambTick(t) { for (const w of windF) { const s = Math.sin(t * .13 + w.base) * .5 + Math.sin(t * .051 + w.base * 2) * .5; w.f.frequency.value = w.base * (1 + s * .35); w.g.gain.value = w.v * (.55 + .45 * (s * .5 + .5)); } }
+// 木頭嘎吱：鋸齒波被快速的方波開關（黏滑摩擦），音高慢慢下滑
+function creak() {
+  if (!ac) return; const t = ac.currentTime + .05, dur = rand(.5, 1.3), f0 = rand(70, 140);
+  const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.setValueAtTime(f0, t); o.frequency.linearRampToValueAtTime(f0 * rand(.7, 1.25), t + dur);
+  const am = ac.createOscillator(); am.type = 'square'; am.frequency.setValueAtTime(rand(14, 30), t); am.frequency.linearRampToValueAtTime(rand(8, 40), t + dur);
+  const amg = ac.createGain(); amg.gain.value = .5; const vca = ac.createGain(); vca.gain.value = .5; am.connect(amg); amg.connect(vca.gain);
+  const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.value = rand(500, 1100); bp.Q.value = 3; const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 1800;
+  const env = ac.createGain(), v = rand(.05, .11); env.gain.setValueAtTime(0, t); env.gain.linearRampToValueAtTime(v, t + .08); env.gain.setValueAtTime(v, t + dur - .15); env.gain.linearRampToValueAtTime(0, t + dur);
+  const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+  o.connect(vca); vca.connect(bp); bp.connect(lp); lp.connect(env); if (pan) { pan.pan.value = rand(-.8, .8); env.connect(pan); pan.connect(ambFx); } else env.connect(ambFx);
+  o.start(t); am.start(t); o.stop(t + dur + .05); am.stop(t + dur + .05);
+}
+// 遠處的帝鐘（道士搖鈴）：不諧和泛音的金屬聲，連搖幾下，隔著牆（低通）傳來
+function bell() {
+  if (!ac) return; const n = 3 + (Math.random() * 4 | 0), f = rand(1350, 1750), gap = rand(.22, .32), lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = rand(2200, 3200);
+  const pan = ac.createStereoPanner ? ac.createStereoPanner() : null; if (pan) { pan.pan.value = rand(-.9, .9); lp.connect(pan); pan.connect(ambFx); } else lp.connect(ambFx);
+  for (let k = 0; k < n; k++) {
+    const t = ac.currentTime + .05 + k * gap + rand(-.03, .03), v = rand(.02, .035) * (k === n - 1 ? .7 : 1);
+    [[1, 1], [2.32, .55], [4.25, .35], [6.63, .2], [9.38, .1]].forEach(([r, a]) => {
+      const o = ac.createOscillator(); o.frequency.value = f * r * rand(.995, 1.005); const g = ac.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v * a, t + .004); g.gain.exponentialRampToValueAtTime(.0001, t + 1.4 / Math.sqrt(r));
+      o.connect(g); g.connect(lp); o.start(t); o.stop(t + 1.5);
+    });
+  }
 }
 // 播放音效條裡的一段；lp>0 時加低通（遠處或隔著東西的聲音）。回傳 false 表示錄音尚未載入
 const VOL = { sfx: +(LSget('b2vs') ?? 1), amb: +(LSget('b2va') ?? 1) }; let calm = LSget('b2calm') === '1';
@@ -1748,11 +1792,16 @@ const SPAWNS = [
 function spawnEnemy(force) {
   const r = Math.random();
   let tn = force || (wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .38 ? 'runner' : wave >= 3 && r > .86 ? 'spitter' : wave >= 2 && r > .62 ? 'corpse' : 'walker');
+  if (!force && curMap === 'yizhuang' && TYPES[tn].fb && Math.random() < .65) tn = TYPES[tn].fb;    // 義莊是清朝殭屍的地盤
   let mid = TYPES[tn].model; if (Array.isArray(mid)) mid = mid[rand(mid.length) | 0];
   if (mid && !(EXT[mid].proto && EXT.SU)) { tn = TYPES[tn].fb; mid = null; }        // 模型還沒載入：先用清朝殭屍代替
   const T = TYPES[tn];
   // 優先從玩家看不到/較遠的門湧出
-  const sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s;
+  let sp = SPAWNS.map(s => ({ s, d: Math.hypot(s.wx - player.x, s.wz - player.z) + rand(14) })).sort((a, b) => b.d - a.d)[rand(3) | 0].s, rise = false;
+  if (!force && !mid && !T.boss && curMap === 'yizhuang' && state === 'play' && Math.random() < .3) {      // 從棺材旁邊爬起來：選離玩家 5～14 m 的棺木
+    const cs = MAPS.yizhuang.coffins.filter(c => { const d = Math.hypot(c.sx - player.x, c.sz - player.z); return d > 5 && d < 14; });
+    if (cs.length) { const c = cs[rand(cs.length) | 0]; sp = { sx: c.sx, sz: c.sz, wx: c.sx, wz: c.sz }; rise = true; }
+  }
   const root = new THREE.Group(), body = new THREE.Group(); root.add(body);
   const Z = mid ? null : ZB[T.build], v = () => rand(.88, 1.06);
   let mat = null; if (!mid) {
@@ -1762,6 +1811,7 @@ function spawnEnemy(force) {
   const eyeMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(...(T.eye || [0, 0, 0])), fog: false });
   const e = { root, body, mat, eyeMat, T, type: tn, hp: T.hp * (1 + .1 * (wave - 1) + .006 * (wave - 1) ** 2), x: sp.sx + rand(-.6, .6), z: sp.sz + rand(-.6, .6), way: sp, mode: 'enter',
     ph: rand(6.28), kx: 0, kz: 0, stun: 0, atk: -.4, flash: 0, dead: false, deadT: 0, speed: T.speed * rand(.9, 1.12) * (1 + Math.min(wave, 12) * .025), meshes: [], rot: 0, growlT: rand(3, 9), spitT: rand(1.5, 3) };
+  if (rise) { e.x = sp.sx; e.z = sp.sz; e.mode = 'chase'; e.riseT = 1.4; e.lk = { x: player.x, z: player.z }; e.rot = Math.atan2(player.x - e.x, player.z - e.z); creak(); setTimeout(() => sfx.growl(.5), 600); }
   e.maxHp = e.hp; if (T.boss) { bossE = e; showBanner('首 領 出 現', 3000); sfx.growl(1, true); }
   e.side = Math.random() < .5 ? -1 : 1; e.sd = rand(6.28); e.hy = 0;
   if (mid) {
@@ -1828,6 +1878,12 @@ function updateEnemies(dt, t) {
       continue;
     }
     alive++;
+    if (e.riseT > 0) {     // 直挺挺地從躺姿立起來（清朝殭屍經典動作），立起來之前不會移動
+      e.riseT -= dt; const k = 1 - Math.max(0, e.riseT) / 1.4, q = k < .25 ? 0 : (k - .25) / .75, ez = 1 - (1 - q) ** 3;
+      e.body.rotation.x = -(1 - ez) * Math.PI / 2; e.body.position.y = (1 - ez) * .3; e.root.position.set(e.x, 0, e.z); e.root.rotation.y = e.rot;
+      if (e.riseT <= 0) { e.body.rotation.x = 0; e.body.position.y = 0; }
+      continue;
+    }
     const pdx = player.x - e.x, pdz = player.z - e.z, dist = Math.hypot(pdx, pdz) || 1e-3;      // dist：到玩家的真實距離
     e.pT = (e.pT || 0) - dt;
     if (e.pT <= 0) {         // 感知每 0.2 秒更新一次：看得到、聽得到槍聲、或貼得很近，才知道玩家在哪
@@ -1843,9 +1899,15 @@ function updateEnemies(dt, t) {
     if (inRange) { dx = pdx / dist; dz = pdz / dist; }
     let vx = dx, vz = dz;
     if (e.mode === 'chase') {
+      // 避障：只閃「擋在前往目標路線上」的障礙物，往障礙物較空的那一側繞；目標就在障礙物旁邊時不再被推開
+      // 卡住超過 1 秒（距離目標沒有縮短）就換另一側繞
+      e.stk = (e.stk || 0) + dt; if (e.stk > 1) { if (tdist > (e.lastD ?? 1e9) - .25 && tdist > 1.6) e.side2 = -(e.side2 || 1); e.lastD = tdist; e.stk = 0; }
       for (const o of obstacles) {
-        const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz), R = o.r + 1;
-        if (d < R) { const ax = ox / d, az = oz / d; let tx2 = -az, tz2 = ax; if (tx2 * dx + tz2 * dz < 0) { tx2 = -tx2; tz2 = -tz2; } const k = (R - d) / R * 2.2; vx += (ax * .9 + tx2 * 1.3) * k; vz += (az * .9 + tz2 * 1.3) * k; }
+        const rx = o.x - e.x, rz = o.z - e.z, along = rx * dx + rz * dz, lat = rx * dz - rz * dx, d = Math.hypot(rx, rz), clr = o.r + .45;
+        if (d < o.r + .5) { const k = (o.r + .5 - d) / .5; vx -= rx / d * k; vz -= rz / d * k; }      // 貼太近：輕推開
+        if (along <= 0 || along > tdist + o.r || Math.abs(lat) > clr || d > o.r + 2.2) continue;
+        const sgn = (lat > 0 ? -1 : 1) * (e.side2 || 1), k = (1 - Math.abs(lat) / clr) * (1.6 - Math.min(1, (d - o.r) / 2.2)) * 1.6;   // 往障礙物的反側（橫向）偏
+        vx += dz * sgn * k; vz += -dx * sgn * k;
       }
       for (const o of enemies) {
         if (o === e || o.dead) continue; const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz);
@@ -2144,7 +2206,8 @@ const MODES = {
 };
 let gameMode = MODES[LS.get('b2mode')] ? LS.get('b2mode') : 'survival', timeLeft = 0, lastSec = -1, comboN = 0, comboT = 0, bossE = null, bossPending = false, lastBoss = -1;
 let sensMul = clamp(parseFloat(LS.get('b2sens')) || 1, .4, 2.2);
-const best = m => +LS.get('b2best_' + m) || 0;
+// 最佳分數依「模式＋地圖」分開記（地下室沿用舊的紀錄）
+const bestKey = m => 'b2best_' + m + (mapSel === 'basement' ? '' : '@' + mapSel), best = m => +LS.get(bestKey(m)) || 0;
 let mapSel = MAPS[LS.get('b2map')] ? LS.get('b2map') : 'basement';
 function refreshModes() {
   $('modes').innerHTML = ''; 
@@ -2155,7 +2218,7 @@ function refreshModes() {
       if (k === 'yizhuang' && !MAPS[k].built && loadDone) { document.body.classList.add('loading'); LOAD.p = LOAD.v = 0; LOAD.set(15, '建造' + MAPS[k].n, 90); requestAnimationFrame(function t() { const L = LOAD; L.v += (L.p - L.v) * .15; if (L.v < L.cap - .5) L.v += (L.cap - L.v) * .02; $('loadFill').style.width = L.v + '%'; $('loadPct').textContent = Math.floor(L.v) + '%'; if (document.body.classList.contains('loading')) requestAnimationFrame(t); }); await nextPaint(); await nextPaint(); }
       setMap(k); if (loadDone && document.body.classList.contains('loading')) endBar();
     }; $('maps').appendChild(b); }
-  $('modeDesc').textContent = MODES[gameMode].d + (best(gameMode) ? `　·　最佳 ${best(gameMode)}` : '');
+  $('modeDesc').textContent = MODES[gameMode].d + (best(gameMode) ? `　·　${MAPS[mapSel].n}最佳 ${best(gameMode)}` : '');
 }
 refreshModes();
 $('sens').value = sensMul; $('sens').oninput = e => { sensMul = +e.target.value; LS.set('b2sens', sensMul); };
@@ -2186,8 +2249,10 @@ async function setAO(on) {
   }
   if (gtao) gtao.enabled = on && $('aoOn').checked;
 }
+let assist = LS.get('b2assist') !== '0';
+$('assistOn').checked = assist; $('assistOn').onchange = e => { assist = e.target.checked; LS.set('b2assist', assist ? '1' : '0'); };
 if (IS_TOUCH) $('aoLbl').style.display = 'none';
-else { $('aoOn').checked = LS.get('b2ao') !== '0'; $('aoOn').onchange = e => { LS.set('b2ao', e.target.checked ? '1' : '0'); setAO(e.target.checked); }; }
+else { $('assistLbl').style.display = 'none'; $('aoOn').checked = LS.get('b2ao') !== '0'; $('aoOn').onchange = e => { LS.set('b2ao', e.target.checked ? '1' : '0'); setAO(e.target.checked); }; }
 
 // 強化（每波結束三選一）
 const perk = {};
@@ -2280,6 +2345,38 @@ function resetGame() {
   if (MODES[gameMode].time) { wave = 1; toSpawn = 0; spawnT = 1.5; showBanner(MODES[gameMode].n); hud(); } else startWave(1);
 }
 let lastMode = false;
+// 新手教學：第一次玩時一步一步提示，做到了才換下一步（遙控器模式手機上已有說明，略過）
+let tut = null;
+function tutStart() {
+  if (LS.get('b2tut') === '1' || remote.on) { tut = null; $('tut').classList.remove('on'); return; }
+  const T = IS_TOUCH ? [
+    ['用左半邊畫面拖曳來移動', s => s.mv > 2.5],
+    [useGyro ? '轉動手機來瞄準' : '在右半邊畫面拖曳來轉向', s => s.lk > 1.2],
+    ['按住「射擊」開槍', s => s.fire > .5],
+    ['「開鏡」可以精準瞄準，「換彈」手動裝填', s => s.t > 4],
+    ['按住「換槍」往清單滑，放開就換成那把', s => s.sw || s.t > 6],
+    ['打倒殭屍會掉武器箱，走過去就能撿', s => s.t > 4.5]
+  ] : [
+    ['WASD 移動', s => s.mv > 2.5],
+    ['移動滑鼠瞄準', s => s.lk > 1.2],
+    ['左鍵開槍、右鍵開鏡', s => s.fire > .5],
+    ['R 換彈，Q 或滾輪換槍，1～0 直接選', s => s.sw || s.t > 6],
+    ['打倒殭屍會掉武器箱，走過去就能撿；Esc 暫停', s => s.t > 4.5]
+  ];
+  tut = { T, i: 0, t: 0, mv: 0, lk: 0, fire: 0, sw: false, px: player.x, pz: player.z, yaw, wi: cur }; spawnT += 7; tutShow();
+}
+function tutShow() { $('tut').innerHTML = ''; const d = document.createElement('div'); d.textContent = tut.T[tut.i][0]; const sm = document.createElement('small'); sm.textContent = `新手教學 ${tut.i + 1}／${tut.T.length}`; $('tut').append(d, sm); $('tut').classList.add('on'); }
+function tutTick(dt) {
+  if (!tut) return; const s = tut; s.t += dt;
+  s.mv += Math.hypot(player.x - s.px, player.z - s.pz); s.px = player.x; s.pz = player.z;
+  let dy = yaw - s.yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); s.lk += Math.abs(dy); s.yaw = yaw;
+  if (input.fire) s.fire += dt; if (cur !== s.wi) s.sw = true;
+  if (s.T[s.i][1](s)) {
+    s.i++; s.t = 0; s.sw = false; s.wi = cur; sfx.pick?.();
+    if (s.i >= s.T.length) { tut = null; LS.set('b2tut', '1'); $('tut').classList.remove('on'); showTip('教學完成，祝你好運', 2200); }
+    else tutShow();
+  }
+}
 // mode：true＝手機陀螺儀、false＝觸控/滑鼠、'remote'＝手機當遙控器
 async function begin(mode) {
   initAudio(); lastMode = mode; remote.on = mode === 'remote' && remoteLive();
@@ -2292,7 +2389,7 @@ async function begin(mode) {
   document.body.classList.toggle('gyro', useGyro); document.body.classList.toggle('remote', remote.on);
   for (const id of ['menu', 'over', 'pair', 'perks', 'pauseScr']) $(id).classList.add('hide'); mountSettings($('menu')); closePicker(); $('hud').classList.add('on');
   if (curMap !== mapSel) setMap(mapSel);
-  state = 'play'; resetGame();
+  state = 'play'; resetGame(); tutStart();
   if (mode === true && IS_TOUCH) {
     if (!useGyro) showTip('無法取得陀螺儀權限，已改用觸控瞄準', 4000);
     else setTimeout(() => { if (!ori.has && state === 'play') { useGyro = false; document.body.classList.remove('gyro'); showTip('此裝置沒有陀螺儀訊號，已改用觸控瞄準', 4000); } }, 1500);
@@ -2300,11 +2397,34 @@ async function begin(mode) {
 }
 function gameOver(timeUp) {
   state = 'dead'; input.fire = input.ads = false; document.exitPointerLock?.();
-  const rec = score > best(gameMode); if (rec) LS.set('b2best_' + gameMode, score); refreshModes();
+  try { composer.render(0); const c = shot.c; c.width = renderer.domElement.width; c.height = renderer.domElement.height; c.getContext('2d').drawImage(renderer.domElement, 0, 0); } catch (e) { }   // 倒下那一刻的畫面（同一個工作內讀取，不需要 preserveDrawingBuffer）
+  const rec = score > best(gameMode); if (rec) LS.set(bestKey(gameMode), score); refreshModes();
   $('overTitle').textContent = timeUp ? '時間到' : '你倒下了';
-  $('final').innerHTML = `${MODES[gameMode].n} · ${MODES[gameMode].time ? '' : `撐到第 ${wave} 波 · `}擊殺 ${kills}<br>得分 ${score}　` + (rec ? '<b style="color:#ffd23a">新紀錄！</b>' : `最佳 ${best(gameMode)}`) + (remote.on ? '<br><small>在手機上按「再來一次」</small>' : '');
+  $('final').innerHTML = `${MAPS[mapSel].n} · ${MODES[gameMode].n} · ${MODES[gameMode].time ? '' : `撐到第 ${wave} 波 · `}擊殺 ${kills}<br>得分 ${score}　` + (rec ? '<b style="color:#ffd23a">新紀錄！</b>' : `最佳 ${best(gameMode)}`) + (remote.on ? '<br><small>在手機上按「再來一次」</small>' : '');
+  shot.info = { map: MAPS[mapSel].n, mode: MODES[gameMode].n, wave: MODES[gameMode].time ? 0 : wave, kills, score, rec, timeUp };
   setTimeout(() => { $('over').classList.remove('hide'); $('hud').classList.remove('on'); }, 900);
 }
+// 戰績分享圖（1080×1350）：倒下那一刻的畫面＋分數，手機用系統分享，電腦直接下載
+const shot = { c: document.createElement('canvas'), info: null };
+function shareCard() {
+  const I = shot.info; if (!I) return; const W2 = 1080, H2 = 1350, c = document.createElement('canvas'); c.width = W2; c.height = H2; const g = c.getContext('2d');
+  g.fillStyle = '#0b0907'; g.fillRect(0, 0, W2, H2);
+  const s = shot.c; if (s.width) { const hh = 900, k = Math.max(W2 / s.width, hh / s.height), w = s.width * k, h = s.height * k; g.drawImage(s, (W2 - w) / 2, (hh - h) / 2, w, h); }
+  const gr = g.createLinearGradient(0, 520, 0, 980); gr.addColorStop(0, 'rgba(11,9,7,0)'); gr.addColorStop(1, 'rgba(11,9,7,1)'); g.fillStyle = gr; g.fillRect(0, 520, W2, 460);
+  const F = '"PingFang TC","Noto Sans TC","Microsoft JhengHei",sans-serif'; g.textAlign = 'center';
+  g.fillStyle = '#e8dcc0'; g.font = `bold 64px ${F}`; g.fillText(I.timeUp ? '時 間 到' : '你 倒 下 了', W2 / 2, 860);
+  g.fillStyle = 'rgba(232,220,192,.7)'; g.font = `34px ${F}`; g.fillText(`${I.map} · ${I.mode}${I.wave ? ` · 撐到第 ${I.wave} 波` : ''}`, W2 / 2, 930);
+  g.fillStyle = '#ffd23a'; g.font = `bold 150px ${F}`; g.fillText(I.score.toLocaleString(), W2 / 2, 1100);
+  g.fillStyle = 'rgba(232,220,192,.8)'; g.font = `36px ${F}`; g.fillText(`擊殺 ${I.kills}${I.rec ? '　·　新紀錄！' : ''}`, W2 / 2, 1170);
+  g.fillStyle = '#b93a2c'; g.fillRect(W2 / 2 - 60, 1215, 120, 4);
+  g.fillStyle = 'rgba(232,220,192,.55)'; g.font = `30px ${F}`; g.fillText('地下室 B2　' + location.host + location.pathname.replace(/index\.html$/, ''), W2 / 2, 1285);
+  c.toBlob(async b => {
+    if (!b) return; const f = new File([b], `B2-${I.score}.png`, { type: 'image/png' });
+    try { if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f], title: '地下室 B2', text: `我在${I.map}拿了 ${I.score} 分，你呢？` }); return; } } catch (e) { if (e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(b); a.download = f.name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); $('bShare').textContent = '已下載戰績圖'; setTimeout(() => $('bShare').textContent = '分享戰績圖', 2500);
+  }, 'image/png');
+}
+$('bShare').onclick = shareCard;
 $('bGyro').onclick = () => begin(true); $('bTouch').onclick = () => begin(false);
 $('bAgain').onclick = () => begin(lastMode === 'remote' && !remoteLive() ? false : lastMode);
 function toMenu() {
@@ -2413,7 +2533,7 @@ $('bBack').onclick = () => { $('pair').classList.add('hide'); $('menu').classLis
 
 /* ───────────────────────── 主迴圈 ───────────────────────── */
 const fpsW = { n: 0, sum: 0, max: 0, last: performance.now() };
-const clock = new THREE.Clock(); let gameTime = 0, needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, heartT = 0, deathTilt = 0, lastUI = -1;
+const clock = new THREE.Clock(); let gameTime = 0, needResize = false, timeScale = 1, fpsAcc = 0, fpsN = 0, dripT = 4, moanT = 8, creakT = 5, bellT = 14, heartT = 0, deathTilt = 0, lastUI = -1;
 const lerp = (a, b, t) => a + (b - a) * t, seg = (a, b, x) => clamp((x - a) / (b - a), 0, 1), ss = x => x * x * (3 - 2 * x);
 function updateWeapon(dt, mv) {
   const w = cur, P = w.parts, play = state === 'play';
@@ -2524,6 +2644,17 @@ function updateWeapon(dt, mv) {
   const ui = Math.round(a * 20) + Math.round(scoped * 20) * 100;
   if (ui !== lastUI) { lastUI = ui; $('cross').style.opacity = (1 - a) * .8; $('scope').style.opacity = scoped; }
 }
+function assistTarget() {
+  let best = null, bs = .085;     // 約 5 度以內
+  for (const e of enemies) {
+    if (e.dead || e.riseT > 0 || !e.sees) continue;
+    const dx = e.x - player.x, dz = e.z - player.z, h = Math.hypot(dx, dz); if (h > 22 || h < .6) continue;
+    const ty = Math.atan2(-dx, -dz), tp = Math.atan2(1.25 * e.T.scale - EYE, h);
+    let dy = ty - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); const sc = Math.hypot(dy, tp - pitch) * Math.min(1, h / 4);   // 越近允許的角度越大
+    if (sc < bs) { bs = sc; best = { yaw: ty, pitch: tp }; }
+  }
+  return best;
+}
 function updatePlayer(dt) {
   // 視角（開鏡時依視野縮小靈敏度）
   const fovK = Math.tan(camera.fov * Math.PI / 360) / Math.tan(baseFov * Math.PI / 360), sens = (IS_TOUCH ? .0042 : .0044) * fovK * sensMul;
@@ -2550,7 +2681,9 @@ function updatePlayer(dt) {
     deviceQuat(qDev); qTmp.copy(qYaw.setFromAxisAngle(Y, gyroYawOff)).multiply(qDev);
     qSmooth.slerp(qTmp, 1 - Math.exp(-dt * 16)); qBase.copy(qSmooth); yaw = yawOf(qBase);
   } else {
-    yaw -= lookDX * sens; pitch = clamp(pitch - lookDY * sens, -1.35, 1.35);
+    // 觸控輔助瞄準：準星附近有看得到的殭屍時，轉向稍微變慢（不會滑過頭），手指在動或正在射擊時輕輕吸向牠的胸口
+    let k = 1; if (IS_TOUCH && assist) { const a = assistTarget(); if (a) { k = .65; if (lookDX || lookDY || input.fire) { const r = Math.min(1, dt * 2.2); let dy = a.yaw - yaw; dy = Math.atan2(Math.sin(dy), Math.cos(dy)); yaw += dy * r; pitch += (a.pitch - pitch) * r * .6; } } }
+    yaw -= lookDX * sens * k; pitch = clamp(pitch - lookDY * sens * k, -1.35, 1.35);
     qBase.setFromEuler(eTmp.set(pitch, yaw, 0, 'YXZ'));
   }
   swayV.x += (clamp(lookDX * .0006, -.03, .03) - swayV.x) * Math.min(1, dt * 10); swayV.y += (clamp(lookDY * .0006, -.03, .03) - swayV.y) * Math.min(1, dt * 10);
@@ -2577,6 +2710,7 @@ function frame() {
   for (const l of lamps) { l.pivot.rotation.z = Math.sin(t * l.w1 + l.ph) * l.amp; l.pivot.rotation.x = Math.sin(t * l.w2 + l.ph * 2) * l.amp * .7; }
 
   if (state === 'play') {
+    tutTick(dt);
     updateWeapon(dt, updatePlayer(dt));
     attackGrace = Math.max(0, attackGrace - dt);
     const alive = updateEnemies(dt, t);
@@ -2615,7 +2749,8 @@ function frame() {
     ten = clamp(ten / 2.5, 0, 1); droneG.gain.setTargetAtTime(.35 + ten * 1.1, ac.currentTime, .6); droneF.frequency.setTargetAtTime(350 + ten * 2600, ac.currentTime, .6);
     if (state === 'play' && hp < perk.maxHp * .35) { heartT -= dt; if (heartT <= 0) { const k = 1 - hp / (perk.maxHp * .35); heartT = 60 / (75 + k * 55); sfx.heart(.35 + k * .4); } } else heartT = 0;
   }
-  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2, 6); sfx.drip(); } moanT -= dt; if (moanT < 0) { moanT = rand(10, 24); sfx.moan(); } }
+  if (ac && curMap === 'yizhuang') { ambTick(t); if (state === 'play') { creakT -= dt; if (creakT < 0) { creakT = rand(6, 16); creak(); } bellT -= dt; if (bellT < 0) { bellT = rand(25, 55); bell(); } } }
+  if (ac && state === 'play') { dripT -= dt; if (dripT < 0) { dripT = rand(2, 6) * (curMap === 'yizhuang' ? 3 : 1); sfx.drip(); } moanT -= dt; if (moanT < 0) { moanT = rand(10, 24); sfx.moan(); } }
   if (remote.live) { if (!remoteLive()) remoteLost(); else if (performance.now() > remote.sendT) { remote.sendT = performance.now() + 200; remoteStatus(); } }   // 用實際時間計時，主機掉幀時也不會讓手機誤判斷線
 
   composer.render(dt);
@@ -2638,9 +2773,12 @@ document.addEventListener('visibilitychange', () => { clock.getDelta(); if (docu
 let modelsP = 0, weaponsP = 0, loadDone = false;
 function loadProgress() {
   if (loadDone) return;
-  LOAD.set(60 + modelsP * 30 + weaponsP * 10, modelsP < 1 ? '載入怪物模型' : '準備武器', modelsP < 1 ? 60 + (modelsP + .15) * 30 : 100);
-  if (modelsP >= 1 && weaponsP >= 1) finishLoading();
+  LOAD.set(60 + modelsP * 25 + weaponsP * 8, modelsP < 1 ? '載入怪物模型' : '準備武器', modelsP < 1 ? 60 + (modelsP + .15) * 25 : 93);
+  if (modelsP >= 1 && weaponsP >= 1 && !prepY) { prepY = true; prepMaps(); }
 }
+// 義莊也在載入畫面就建好（隱藏著），之後在選單切換地圖不用再等
+let prepY = false;
+async function prepMaps() { if (!MAPS.yizhuang.built) { LOAD.set(93, '建造義莊', 99); await nextPaint(); buildYizhuang(); } finishLoading(); }
 function finishLoading() { if (loadDone) return; loadDone = true; endBar(); }
 function endBar() { LOAD.set(100, '完成'); const t0 = performance.now(); (function wait() { if (LOAD.v > 98.5 || performance.now() - t0 > 700) { LOAD.v = 100; $('loadFill').style.width = '100%'; $('loadPct').textContent = '100%'; setTimeout(() => document.body.classList.remove('loading'), 150); } else requestAnimationFrame(wait); })(); }
 setTimeout(finishLoading, 30000);   // 網路太慢時最多等 30 秒，之後模型會在背景繼續下載（還沒到的怪物先用內建模型）
