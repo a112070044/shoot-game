@@ -1034,7 +1034,8 @@ const sfx = {
   die() { play(pick('die', 3), .75, rand(.72, .92)) || tone('sawtooth', 120, 30, .7, .32); },
   moan() { play(pick('moan', 4), rand(.12, .22), rand(.7, .9), 650, 0, ambFx); },      // 遠處黑暗中的呻吟
   hurt() { tone('sine', 95, 38, .3, .9); play(pick('flesh', 2), 1, .7) || noise(.16, 'lowpass', 900, 150, .6); },
-  pick() { tone('sine', 660, 1320, .2, .25); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { play('step3', .5, .6) || noise(.22, 'bandpass', 1100, 300, .3, 2); },
+  pick() { tone('sine', 660, 1320, .2, .25); },
+  scream() { tone('sawtooth', 1250, 620, 1.3, .07); tone('sine', 1900, 900, 1.1, .05); noise(1.4, 'bandpass', 3000, 1200, .28, 5); }, perk() { tone('triangle', 440, 880, .3, .18); }, spit() { play('step3', .5, .6) || noise(.22, 'bandpass', 1100, 300, .3, 2); },
   drip() { play(pick('drip', 5), rand(.25, .7), rand(.75, 1.35), 0, 0, ambFx); },
   heart(v) { tone('sine', 62, 38, .13, v); setTimeout(() => tone('sine', 55, 36, .11, v * .7), 170); },                                                         // 近處的水滴
   step(v) { play(pick('step', 6), .42 * v, rand(.88, 1.12)) || noise(.2, 'bandpass', rand(650, 1050), 330, .26 * v, .8); },   // 踩進積水
@@ -1783,6 +1784,10 @@ const TYPES = {   // robe：官服顏色；hop：每秒跳幾下；hh：跳多�
   runnerJ: { build: 'thin', tint: [1.05, .9, .85], robe: [.11, .012, .012], hop: 3.4, hh: .2, hp: 2.5, speed: 3.3, scale: .86, dmg: 7, eye: [1.65, 1.21, 0.11], lean: .16, score: 150 },
   bruteJ: { build: 'bulk', tint: [.85, .9, 1], robe: [.012, .045, .028], hop: 1.6, hh: .1, hp: 13, speed: 1.05, scale: 1.38, dmg: 22, eye: [1.87, 0.55, 0.06], lean: .05, score: 400 },
   spitter: { build: 'fat', tint: [.75, 1.08, .7], robe: [.05, .016, .075], hop: 2.3, hh: .14, hp: 3, speed: 1.7, scale: .95, dmg: 9, eye: [0.22, 1.76, 0.28], lean: .1, score: 200, spit: true },   // 遠距離吐酸液
+  // 女鬼：白衣長髮、飄在半空、穿牆（柱子、棺木擋不住她）；靠近時尖叫
+  ghost: { build: 'thin', tint: [1.3, 1.28, 1.3], robe: [.62, .62, .6], hop: 0, hh: 0, hp: 3.5, speed: 1.55, scale: 1, dmg: 12, eye: [1.4, .08, .06], lean: .02, score: 250, float: true, phase: true, noFu: true },
+  // 魔神仔：台灣山裡的矮小精怪，幾乎透明只看得到綠眼睛，靠近或被打中才現形；動作又快又碎
+  mosin: { build: 'thin', tint: [.5, .62, .42], robe: [.025, .04, .02], hop: 4.4, hh: .1, hp: 2, speed: 3.5, scale: .62, dmg: 6, eye: [.3, 2.4, .45], lean: .3, score: 300, hide: true, noFu: true },
   boss: { build: 'bulk', tint: [.6, .55, .65], robe: [.32, .21, .025], hop: 1.8, hh: .12, hp: 70, speed: 1.3, scale: 1.65, dmg: 30, eye: [1.43, 1.54, 1.98], lean: .05, score: 2000, boss: true }   // 明黃龍袍
 };
 const SPAWNS = [
@@ -1792,6 +1797,7 @@ const SPAWNS = [
 function spawnEnemy(force) {
   const r = Math.random();
   let tn = force || (wave >= 4 && r < .14 ? 'brute' : wave >= 2 && r < .38 ? 'runner' : wave >= 3 && r > .86 ? 'spitter' : wave >= 2 && r > .62 ? 'corpse' : 'walker');
+  if (!force) { const r2 = Math.random(); if (wave >= 3 && r2 < .08) tn = 'ghost'; else if (wave >= 4 && r2 < .15) tn = 'mosin'; }
   if (!force && curMap === 'yizhuang' && TYPES[tn].fb && Math.random() < .65) tn = TYPES[tn].fb;    // 義莊是清朝殭屍的地盤
   let mid = TYPES[tn].model; if (Array.isArray(mid)) mid = mid[rand(mid.length) | 0];
   if (mid && !(EXT[mid].proto && EXT.SU)) { tn = TYPES[tn].fb; mid = null; }        // 模型還沒載入：先用清朝殭屍代替
@@ -1831,7 +1837,13 @@ function spawnEnemy(force) {
   [e.hips, e.torso, e.head, e.armL, e.foreL, e.armR, e.foreR, e.legL, e.shinL, e.legR, e.shinR] = bones;
   e.torso.rotation.x = T.lean; e.head.rotation.x = -T.lean * .8; e.skels = [e.skel];
   for (const sx of [-.031, .031]) { const m = new THREE.Mesh(eyeGeo, eyeMat); m.position.set(sx, .143, .071); e.head.add(m); }
-  if (!T.boss && Math.random() < .75) { e.fu = new THREE.Mesh(fuGeo, fuMat); e.fu.position.set(0, .2, .118); e.head.add(e.fu); }     // 多數殭屍額頭貼著符
+  if (T.float) {     // 女鬼：長髮垂在臉前
+    const hair = new THREE.Mesh(new THREE.CylinderGeometry(.075, .15, .62, 12, 1, true), new THREE.MeshStandardMaterial({ color: 0x050403, roughness: .6, side: THREE.DoubleSide }));
+    hair.position.set(0, -.08, .02); e.head.add(hair); e.mats.push(hair.material);
+  }
+  if (T.float || T.hide) { mat.transparent = true; mat.opacity = T.hide ? .06 : .7; e.op = mat.opacity; }
+  if (T.hide) skin.castShadow = false;      // 魔神仔沒有影子
+  if (!T.boss && !T.noFu && Math.random() < .75) { e.fu = new THREE.Mesh(fuGeo, fuMat); e.fu.position.set(0, .2, .118); e.head.add(e.fu); }     // 多數殭屍額頭貼著符
   root.scale.setScalar(T.scale);
   root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
   if (Math.random() < .5) sfx.growl(.22);
@@ -1898,7 +1910,7 @@ function updateEnemies(dt, t) {
     const range = 1.15 + e.T.scale * .25, inRange = e.mode === 'chase' && dist < range;
     if (inRange) { dx = pdx / dist; dz = pdz / dist; }
     let vx = dx, vz = dz;
-    if (e.mode === 'chase') {
+    if (e.mode === 'chase' && !e.T.phase) {
       // 避障：只閃「擋在前往目標路線上」的障礙物，往障礙物較空的那一側繞；目標就在障礙物旁邊時不再被推開
       // 卡住超過 1 秒（距離目標沒有縮短）就換另一側繞
       e.stk = (e.stk || 0) + dt; if (e.stk > 1) { if (tdist > (e.lastD ?? 1e9) - .25 && tdist > 1.6) e.side2 = -(e.side2 || 1); e.lastD = tdist; e.stk = 0; }
@@ -1917,12 +1929,12 @@ function updateEnemies(dt, t) {
     }
     e.stun = Math.max(0, e.stun - dt);
     const hold = e.T.spit && e.mode === 'chase' && dist < 6.5 && e.sees;
-    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1) * (e.ext ? 1 : 1.57 * Math.abs(Math.sin(e.ph)));      // 清朝殭屍只有騰空時才前進
+    const sp = inRange || hold ? 0 : e.speed * (e.stun > 0 ? .15 : 1) * (e.ext || e.T.float ? 1 : 1.57 * Math.abs(Math.sin(e.ph)));      // 清朝殭屍只有騰空時才前進
     if (e.T.spit && e.mode === 'chase' && dist < 12 && e.sees && state === 'play') { e.spitT -= dt; if (e.spitT <= 0) { e.spitT = rand(2.2, 3.4); spit(e); } }
     e.x += (vx * sp + e.kx) * dt; e.z += (vz * sp + e.kz) * dt; e.kx *= Math.exp(-dt * 9); e.kz *= Math.exp(-dt * 9);
     if (e.mode === 'chase') {
       e.x = clamp(e.x, -W / 2 + .4, W / 2 - .4); e.z = clamp(e.z, -D / 2 + .4, D / 2 - .4);
-      for (const o of obstacles) { const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz), R = o.r + .32; if (d < R && d > 1e-3) { e.x = o.x + ox / d * R; e.z = o.z + oz / d * R; } }
+      if (!e.T.phase) for (const o of obstacles) { const ox = e.x - o.x, oz = e.z - o.z, d = Math.hypot(ox, oz), R = o.r + .32; if (d < R && d > 1e-3) { e.x = o.x + ox / d * R; e.z = o.z + oz / d * R; } }
     }
     // 朝向與動作
     let dr = Math.atan2(dx, dz) - e.rot; dr = Math.atan2(Math.sin(dr), Math.cos(dr)); e.rot += dr * Math.min(1, dt * 7);
@@ -1940,6 +1952,16 @@ function updateEnemies(dt, t) {
       e.growlT -= dt; if (e.growlT < 0) { e.growlT = rand(4, 10); if (dist < 12) sfx.growl(clamp(.45 - dist * .03, .08, .4)); }
       continue;
     }
+    if (e.T.float) {      // 緩慢起伏（不閃爍），看到你又靠得夠近就尖叫一次
+      e.op += ((.58 + .14 * Math.sin(t * .7 + e.sd)) - e.op) * Math.min(1, dt * 3); e.mat.opacity = e.op;
+      e.body.position.y = .3 + Math.sin(t * 1.5 + e.sd) * .07; e.torso.rotation.z = Math.sin(t * .8 + e.sd) * .05; e.head.rotation.z = .25 + Math.sin(t * .6 + e.sd) * .08;
+      if (!e.scr && e.sees && dist < 7 && state === 'play') { e.scr = true; sfx.scream(); damageFx = Math.max(damageFx, .45); addShake(.06); }
+      e.armL.rotation.x = e.armR.rotation.x = -1.35 + Math.sin(t * 1.1 + e.sd) * .1;
+      if (inRange) { e.atk += dt; if (e.atk >= .6) { e.atk = -.8; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); } } else e.atk = Math.min(e.atk, -.15);
+      e.root.position.set(e.x, 0, e.z); let dr2 = Math.atan2(pdx, pdz) - e.rot; dr2 = Math.atan2(Math.sin(dr2), Math.cos(dr2)); e.rot += dr2 * Math.min(1, dt * 4); e.root.rotation.y = e.rot;
+      continue;
+    }
+    if (e.T.hide) { e.revT = Math.max(0, (e.revT || 0) - dt); const vis = dist < 4 || e.revT > 0 || e.flash > 0; e.op += ((vis ? 1 : .05) - e.op) * Math.min(1, dt * (vis ? 8 : 2)); e.mat.opacity = e.op; e.mat.transparent = e.op < .99; }
     const ph0 = e.ph, going = !(inRange || hold); e.ph += dt * e.T.hop * Math.PI * (going ? (e.stun > 0 ? .3 : 1) : 0);
     if (Math.floor(e.ph / Math.PI) !== Math.floor(ph0 / Math.PI) && dist < 12 && state === 'play') sfx.hop(clamp(.55 - dist * .045, .04, .5));   // 落地聲
     e.hy += ((going ? Math.abs(Math.sin(e.ph)) : 0) - e.hy) * Math.min(1, dt * 14); const s = Math.sin(t * 1.7 + e.sd);
@@ -1988,7 +2010,7 @@ function reload() {
 function hitEnemy(e, h, w) {
   const p = h.point, head = h.object.userData.head, n = Math.ceil((head ? 26 : 14) / Math.sqrt(w.pellets));
   const fo = w.fo ? 1 - (1 - w.fo[2]) * clamp((h.distance - w.fo[0]) / (w.fo[1] - w.fo[0]), 0, 1) : 1;      // 距離衰減
-  e.hp -= w.dmg * fo * perk.dmg * (head ? perk.head : 1); e.flash = 1; e.stun = Math.max(e.stun, .16);
+  e.hp -= w.dmg * fo * perk.dmg * (head ? perk.head : 1); e.flash = 1; e.revT = 2.5; e.stun = Math.max(e.stun, .16);
   const kb = w.knock * (head ? 1.4 : 1) / e.T.scale / Math.sqrt(w.pellets); e.kx += vDir.x * kb; e.kz += vDir.z * kb;
   for (let i = 0; i < n; i++) blood.emit(p.x, p.y, p.z, -vDir.x * rand(0, 2.5) + rand(-1.6, 1.6), rand(-.5, 3), -vDir.z * rand(0, 2.5) + rand(-1.6, 1.6), rand(.5, 1.6), rand(.02, .05), rand(.04, .08), .002, .002, 9.8);
   for (let i = 0; i < n / 3; i++) blood.emit(p.x, p.y, p.z, vDir.x * rand(2, 5) + rand(-.6, .6), rand(0, 1.6), vDir.z * rand(2, 5) + rand(-.6, .6), rand(.6, 1.4), rand(.02, .045), .06, .002, .002, 9.8);
