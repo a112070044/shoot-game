@@ -55,6 +55,8 @@
 
 清朝殭屍、所有槍枝、斧頭、掃把、手榴彈模型都由程式產生，不使用外部素材。
 
+- 女鬼：「Ghost lady model (untextured)」by Kabrolkin，OpenGameArt（https://opengameart.org/content/ghost-lady-model-untextured），授權 CC-BY 4.0。已重新上色、轉向、縮放並壓縮為 `models/ghost.glb`。
+
 ## 開發用的 Claude 技能
 
 `.claude/skills/` 內有 15 個遊戲開發技能（射擊手感、效能、音效、敵人 AI、關卡、Three.js 光影與特效、快速原型與設計文件流程），以這個專案開啟 Claude Code 時會自動載入。來源與授權見 `.claude/skills/README.md`。

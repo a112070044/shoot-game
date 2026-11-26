@@ -199,7 +199,7 @@
   <label id="sensRow">轉向靈敏度 <input type="range" id="sens" min="0.4" max="2.2" step="0.1" value="1"></label>
   <div id="setRow"><label>音效 <input type="range" id="volS" min="0" max="1" step="0.05"></label><label>環境音 <input type="range" id="volA" min="0" max="1" step="0.05"></label><label class="chk"><input type="checkbox" id="calm">減少震動與閃光</label><label class="chk"><input type="checkbox" id="fpsOn">顯示 FPS</label><label class="chk" id="assistLbl"><input type="checkbox" id="assistOn">輔助瞄準</label><label class="chk" id="aoLbl"><input type="checkbox" id="aoOn">環境光遮蔽</label></div>
   <div class="help" id="help"></div>
-  <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）· 音效：OpenGameArt（CC0）</div>
+  <div class="help" id="credits" style="font-size:10px;opacity:.4;margin-top:6px">3D 模型：David Glynch、Gowo.Stoyanov、LostBoyz2078、Karabas Studio（Sketchfab）、女鬼 Kabrolkin（OpenGameArt，CC-BY 4.0）· 音效：OpenGameArt（CC0）</div>
 </div>
 <div class="screen hide" id="pauseScr">
   <h1 style="font-size:clamp(28px,6vw,48px)">暫停</h1>
@@ -1677,7 +1677,8 @@ const EXT = {
   z1: { url: 'models/z1.glb' },
   z2: { url: 'models/z2.glb' },
   z3: { url: 'models/z3.glb', clip: true },
-  z4: { url: 'models/z4.glb' }
+  z4: { url: 'models/z4.glb' },
+  ghost: { url: 'models/ghost.glb', static: true }      // 女鬼（OpenGameArt「Ghost lady」，CC-BY 4.0），沒有骨架：飄浮不需要走路動作
 };
 const bkey = n => n.replace(/^mixamorig:?/, '').replace(/^Bone_SM_/, '').replace(/_\d+$/, '');
 const BONES = {
@@ -1712,6 +1713,7 @@ function loadExtModels(onProg = () => { }) {
         const box = new THREE.Box3().setFromObject(wrap, true), s = 1.75 / (box.max.y - box.min.y), c = box.getCenter(new THREE.Vector3());
         model.position.set(-c.x, -box.min.y, -c.z).multiplyScalar(s).add(model.position.clone().multiplyScalar(s - 1)); model.scale.multiplyScalar(s);
         const proto = new THREE.Group(); proto.add(wrap); proto.updateMatrixWorld(true);
+        if (M.static) { M.proto = proto; done(id); return; }
         // 命中判定框：掛在骨頭上，跟著動作移動
         const B = findBones(proto), hits = [];
         const seg = (a, b, thick, head) => {
@@ -1824,6 +1826,14 @@ function spawnEnemy(force) {
     buildExtEnemy(e, mid, T.tint ? new THREE.Color(...T.tint) : new THREE.Color(v(), v(), v()));
     root.scale.setScalar(T.scale); root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
     if (Math.random() < .5) sfx.growl(.22); return;
+  }
+  if (T.float && EXT.ghost.proto) {
+    const g = EXT.ghost.proto.clone(true); e.mats = []; e.gh = true; e.skels = []; e.head = new THREE.Object3D(); body.add(e.head);
+    g.traverse(o => { if (!o.isMesh) return; if (o.material.name === 'eye') { o.material = eyeMat; return; } o.material = o.material.clone(); o.material.transparent = true; o.castShadow = true; e.mats.push(o.material); });
+    body.add(g); e.mat = e.mats[0]; e.op = .7;
+    for (const [w, h, d, y, head] of [[.34, .36, .34, 1.52, true], [.5, 1.25, .45, .72, false]]) { const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), hitMat); m.position.y = y; m.userData.e = e; m.userData.head = head; body.add(m); e.meshes.push(m); }
+    root.scale.setScalar(T.scale); root.position.set(e.x, 0, e.z); scene.add(root); enemies.push(e); rayTargets.push(...e.meshes);
+    return;
   }
   e.mats = [mat];
   const bones = Z.pivots.map(() => new THREE.Bone());
@@ -1953,10 +1963,12 @@ function updateEnemies(dt, t) {
       continue;
     }
     if (e.T.float) {      // 緩慢起伏（不閃爍），看到你又靠得夠近就尖叫一次
-      e.op += ((.58 + .14 * Math.sin(t * .7 + e.sd)) - e.op) * Math.min(1, dt * 3); e.mat.opacity = e.op;
-      e.body.position.y = .3 + Math.sin(t * 1.5 + e.sd) * .07; e.torso.rotation.z = Math.sin(t * .8 + e.sd) * .05; e.head.rotation.z = .25 + Math.sin(t * .6 + e.sd) * .08;
+      e.op += ((.58 + .14 * Math.sin(t * .7 + e.sd)) - e.op) * Math.min(1, dt * 3); for (const m of e.mats) m.opacity = e.op;
+      e.body.position.y = .3 + Math.sin(t * 1.5 + e.sd) * .07;
+      if (e.gh) { e.body.rotation.z = Math.sin(t * .8 + e.sd) * .04; e.body.rotation.x = .06 + Math.sin(t * .5 + e.sd) * .03; }   // 外部模型：整個身體輕輕搖晃前傾
+      else { e.torso.rotation.z = Math.sin(t * .8 + e.sd) * .05; e.head.rotation.z = .25 + Math.sin(t * .6 + e.sd) * .08; }
       if (!e.scr && e.sees && dist < 7 && state === 'play') { e.scr = true; sfx.scream(); damageFx = Math.max(damageFx, .45); addShake(.06); }
-      e.armL.rotation.x = e.armR.rotation.x = -1.35 + Math.sin(t * 1.1 + e.sd) * .1;
+      if (!e.gh) e.armL.rotation.x = e.armR.rotation.x = -1.35 + Math.sin(t * 1.1 + e.sd) * .1;
       if (inRange) { e.atk += dt; if (e.atk >= .6) { e.atk = -.8; if (attackGrace <= 0) hurtPlayer(e.T.dmg, e.x, e.z); } } else e.atk = Math.min(e.atk, -.15);
       e.root.position.set(e.x, 0, e.z); let dr2 = Math.atan2(pdx, pdz) - e.rot; dr2 = Math.atan2(Math.sin(dr2), Math.cos(dr2)); e.rot += dr2 * Math.min(1, dt * 4); e.root.rotation.y = e.rot;
       continue;
